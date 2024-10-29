@@ -1,0 +1,35 @@
+{{- $global := . }}
+{{- if .Values.hdp.onPremiseConnector.enabled }}
+{{- $replicas := int .Values.hdp.replicaCount }}
+{{- range $ordinal := until $replicas }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  {{- if $global.Values.haproxy.kubernetesIngress.enabled }}
+  annotations:
+    haproxy.org/check: "{{ $global.Values.hdp.services.opAccessorService.check }}"
+    haproxy.org/check-http: HEAD {{ $global.Values.hdp.services.opAccessorService.checkPath }}
+    haproxy.org/check-interval: {{ $global.Values.hdp.services.opAccessorService.checkInterval }}
+    {{ $opaPath := (printf "%s-%s-%d" $global.Release.Name $global.Values.hdp.services.hdpService.name $ordinal) }}
+    haproxy.org/route-acl: path_beg -i {{ $global.Values.hdp.services.opAccessorService.aclPath }}_{{ $opaPath }}
+  {{- end }}    
+  name: {{ $global.Release.Name }}-{{ $global.Values.hdp.services.opAccessorService.name }}-{{ $ordinal }}
+  namespace: {{ $global.Release.Namespace }}
+spec:
+  {{- if $global.Values.haproxy.kubernetesIngress.enabled }}
+  type: ClusterIP
+  {{ else }}
+  type: NodePort
+  {{- end }}
+  ports:
+  - name: opaccessor-port
+    port: {{ $global.Values.hdp.ports.opAccessor.port }}
+    protocol: TCP
+    targetPort: {{ $global.Values.hdp.ports.opAccessor.targetPort }}
+  selector:
+    app: hdp-server-app
+    statefulset.kubernetes.io/pod-name: {{ $global.Release.Name }}-{{ $global.Values.hdp.services.hdpService.name }}-{{ $ordinal }}
+{{- end }}
+{{- end }}

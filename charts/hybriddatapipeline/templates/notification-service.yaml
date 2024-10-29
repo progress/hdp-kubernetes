@@ -1,0 +1,29 @@
+{{- if .Values.hdp.onPremiseConnector.enabled }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  {{- if .Values.haproxy.kubernetesIngress.enabled }}
+  annotations:
+    haproxy.org/check: "{{ .Values.hdp.services.notificationService.check }}"
+    haproxy.org/check-http: HEAD {{ .Values.hdp.services.notificationService.checkPath }}
+    haproxy.org/check-interval: {{ .Values.hdp.services.notificationService.checkInterval }}
+    haproxy.org/route-acl: path_end -i {{ .Values.hdp.services.notificationService.aclPath }}
+  {{- end }}
+  name: {{ .Release.Name }}-{{ .Values.hdp.services.notificationService.name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  {{- if .Values.haproxy.kubernetesIngress.enabled }}
+  type: ClusterIP
+  {{ else }}
+  type: NodePort
+  {{- end }}
+  ports:
+  - name: notificationserver-port
+    port: {{ .Values.hdp.ports.notificationServer.port }}
+    protocol: TCP
+    targetPort: {{ .Values.hdp.ports.notificationServer.targetPort }}
+  selector:
+    app: hdp-server-app
+{{- end }}
