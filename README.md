@@ -1,6 +1,5 @@
 # hdp-kubernetes
 
-# hdp-kubernetes-preview
 This a Helm Repository hosting Hybrid Data Pipeline HELM Charts.
 
 # Hybrid Data Pipeline Kubernetes Helm Chart
@@ -29,7 +28,7 @@ This below example Helm Chart installation will create a two-node Hybrid Data Pi
 
 1. Add and Update Hybrid Data Pipeline repo to Helm:
 ```
-helm repo add hdp https://progress.github.io/hdp-kubernetes-preview/
+helm repo add hdp https://progress.github.io/hdp-kubernetes/
 helm repo update
 ```
 
@@ -75,15 +74,12 @@ haproxy:
   kubernetesIngress:
     enabled: true
     ingressName: "hdp-ingress"
-  ## To Configure TLS for HAProxy, set enabled property to true.  Leaving the property as false will setup a self-signed certficate for the HAProxy.
-  ## Put the PEM-formatted SSL certificate into a secret and provide the secret name in the secretName field.
-  ## The PEM-formatted SSL certificate should contain the private key and the certificate. For example: cat certificate.pem private-key.pem > mycert.pem
-  ## To generate the secret in Kubernetes: kubectl create secret tls tls-cert --cert=certificate.pem --key=key.pem
+  ## Configure TLS for HAProxy
+  ## Put the PEM-formatted SSL certificate and private key into a secret and provide the secret name in the secretName field.
+  ## To generate the secret in Kubernetes: kubectl create secret tls tls-cert --cert=mycert.pem --key=privkey.pem
   tls:
-    enabled: false
-    secretName: "" # tls-cert
-    ## The name of the certificate file in the secret.
-    certFileName: "" # mycert.pem
+    enabled: true
+    secretName: "tls-cert"
 ```
 6. Install the Hybrid Data Pipeline Helm Chart using myValues.yaml
 ```
@@ -96,5 +92,3 @@ kubectl get services
 KubernetesIngress of deployment type _LoadBalancer_ will have an external IP configured. This IP address should be configured to the DNS name to resolve the DNS correctly.
 The Hybrid Data Pipeline can then be accessed using hostname as configured for the hdp.loadbalancer.hostName in myValues.yaml
 ****
-### Known Issues
-Currently the hybriddatapipeline should be installed in 'default' namespace. This will be addressed soon.
