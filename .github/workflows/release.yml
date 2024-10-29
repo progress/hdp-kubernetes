@@ -33,3 +33,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.SECRETS_HELM_GITHUB_TOKEN }}
           CR_TOKEN: ${{ secrets.SECRETS_HELM_GITHUB_TOKEN }}
+        with:
+          owner: hdphelm
+          repo: hdp-kubernetes
