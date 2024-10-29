@@ -33,9 +33,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.SECRETS_HELM_GITHUB_TOKEN }}
           CR_TOKEN: ${{ secrets.SECRETS_HELM_GITHUB_TOKEN }}
-          CR_OWNER: hdphelm
-          CR_GIT_REPO: hdp-kubernetes
-        with:
-          charts_dir: charts
-          packages_with_index: true
-          pages_branch: gh-pages
