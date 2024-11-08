@@ -21,6 +21,17 @@ spec:
       - name: init-properties
         image: "busybox:1.36.1"
         imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
         {{- if .Values.haproxy.tls.enabled }}
         command: ["/bin/sh", "-c", "mkdir -p /hdpshare && cp /hdpdeployprops/hdpdeploy.properties /hdpshare/hdpdeploy.properties && echo \'Config Map mounted and properties file copied to /hdpshare!\'; cat /certs/tls.crt /certs/tls.key > /hdpshare/hdp-cert.pem && echo \'Certificate copied to /hdpshare!\'"]
         {{- else }}
@@ -39,6 +50,10 @@ spec:
         - name: hdp-server
           image: "{{.Values.hdp.image.repository}}:{{.Values.hdp.image.tag}}"
           imagePullPolicy: {{.Values.hdp.image.pullPolicy}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: hdpserver
               containerPort: {{.Values.hdp.ports.hdpServer.port}}

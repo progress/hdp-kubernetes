@@ -1,11 +1,11 @@
 {{- if (.Values.hdp.database.postgres.enabled) }}
 # Creates the initial script to setup the PostgresSQL Database for HDP as an external Account Database
-# Expects the secrets to be created prior to setup the ConfigMap
+# Expects the secrets to be created prior to setup this secret 
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
-  name: {{ .Values.postgresql.primary.initdb.scriptsConfigMap }}
-data:
+  name: {{ .Values.postgresql.primary.initdb.scriptsSecret}}
+stringData:
   init.sh: |-
     set -e
     export PGPASSWORD='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "account-database-secrets" "key" "privileged-database-password" "context" $) | trim }}'

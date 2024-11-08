@@ -79,15 +79,15 @@ Usage: {{ include "hybriddatapipeline.secretValue" (dict "secretName" "your-secr
   {{- if $secret -}}
     {{- $value := index $secret.data $key | b64dec -}}
     {{- if (eq $value "") -}}
-      {{- fail (printf "Value is empty for the key %s" $key )  -}}
+      {{- printf "Value is empty for the key %s" $key   -}}
     {{- else -}}
         {{- $value -}}     
     {{- end -}}  
   {{- else -}}
-    {{- fail (printf "Secret %s is not available in the %s namespace" $secretName  $namespace )  -}}
+    {{- printf "Secret %s is not available in the %s namespace" $secretName  $namespace -}}
   {{- end -}}
 {{- else -}}
-  {{- fail "Missing one of the requried parameter secret | key | namespace" -}}
+  {{- printf "Missing one of the requried parameter secret | key | namespace" -}}
 {{- end -}}
 {{- end -}}
 

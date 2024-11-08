@@ -150,5 +150,5 @@ postgresql:
   primary:
     fullname: "postgresql"
     initdb:
-      scriptsConfigMap: "postgres-initsql"
+      scriptsSecret: "postgres-initsql"
 

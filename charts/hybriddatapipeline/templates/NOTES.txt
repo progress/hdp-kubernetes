@@ -38,4 +38,4 @@ To get more information about the release:
 
 Thank you for installing {{ .Chart.Name }}!
 
-For more information, visit our documentation at https://github.com/progress/hdp-kubernetes-preview/charts/{{ .Chart.Name }}.
+For more information, visit our documentation at https://github.com/progress/hdp-kubernetes/charts/{{ .Chart.Name }}.
