@@ -5,43 +5,6 @@ entries:
       category: DataConnectivity
     apiVersion: v2
     appVersion: 4.6.2
-    created: "2024-11-11T06:08:24.069384441Z"
-    dependencies:
-    - condition: hdp.database.postgres.enabled
-      name: postgresql
-      repository: https://charts.bitnami.com/bitnami
-      version: 13.2.30
-    - alias: kubernetesingress
-      condition: haproxy.kubernetesIngress.enabled
-      name: kubernetes-ingress
-      repository: https://haproxytech.github.io/helm-charts/
-      version: 1.38.2
-    description: Progress® DataDirect® Hybrid Data Pipeline is a light-weight software
-      service that provides simple, secure access to cloud and on-premises data for
-      business intelligence tools and applications. Client applications can use ODBC,
-      JDBC, or OData to access data from a broad range of data stores. Requests from
-      client applications are translated into the format supported by the underlying
-      data store – SQL, NoSQL, Big Data, cloud – and returned in the format accepted
-      by the client. Communications in HTTP and HTTPS are supported. In addition to
-      supporting connectivity to a wide range of relational and non-relational database
-      management systems, Hybrid Data Pipeline supports connectivity to REST sources
-      with a built-in Autonomous REST Connector. Moreover, third-party connectors
-      can be integrated with Hybrid Data Pipeline, expanding the range of data stores
-      to which the service can connect.
-    digest: 5f5d6d5d68f3e584b8cbe83b00a7ebab30b67acace927e3dcb3be6fefc6b2229
-    icon: data:image/png;base64,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
-    name: hybriddatapipeline
-    sources:
-    - https://github.com/progress/hdp-kubernetes-preview
-    - https://docs.progress.com/bundle/datadirect-hybrid-data-pipeline-46
-    type: application
-    urls:
-    - https://github.com/progress/hdp-kubernetes/releases/download/hybriddatapipeline-1.0.1/hybriddatapipeline-1.0.1.tgz
-    version: 1.0.1
-  - annotations:
-      category: DataConnectivity
-    apiVersion: v2
-    appVersion: 4.6.2
     created: "2024-11-08T11:38:24.981546014Z"
     dependencies:
     - condition: hdp.database.postgres.enabled
