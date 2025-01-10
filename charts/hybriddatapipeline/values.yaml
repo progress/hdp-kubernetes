@@ -1,7 +1,6 @@
 ## Progress DataDirect Hybrid Data Pipeline Helm Chart Manifest
 
-## Copyright 2025 Progress Software Corporation and/or its 
-## subsidiaries or affiliates. All Rights Reserved.
+## Copyright 2025 Progress Software Corporation and/or its subsidiaries or affiliates. All Rights Reserved.
 
 ## @section Hybrid Data Pipeline (HDP) parameters
 ##
@@ -36,8 +35,7 @@ hdp:
   ##
   fips:
     enabled: true
-  ## @param hdp.proxy.ipAddresses A proxy IP address or list of proxy IP addresses separated by
-  ## the '|' character.
+  ## @param hdp.proxy.ipAddresses A proxy IP address or list of proxy IP addresses separated by the '|' character
   ##
   proxy:
     ipAddresses: 
