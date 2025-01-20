@@ -52,6 +52,12 @@ spec:
           imagePullPolicy: {{.Values.hdp.image.pullPolicy}}
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 12321
+            runAsGroup: 12321
+            capabilities:
+                drop:   
+                 - ALL    
             seccompProfile:
               type: RuntimeDefault
           ports:
