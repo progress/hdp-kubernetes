@@ -28,4 +28,4 @@ dependencies:
     version: "1.38.2"
     condition: haproxy.kubernetesIngress.enabled
 
-version: 0.0.2
+version: 0.0.3
