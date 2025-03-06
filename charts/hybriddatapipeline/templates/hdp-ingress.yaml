@@ -1,0 +1,67 @@
+{{- $global := . }}
+{{- $replicas:= int .Values.hdp.replicaCount }}
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    {{- if .Values.hdpingressconfiguration.haproxy.enabled }}
+    haproxy.org/forwarded-for: "true"
+    haproxy.org/load-balance: roundrobin
+    haproxy.org/timeout-check: 5m
+    haproxy.org/timeout-server: 5m
+    {{- else if .Values.hdpingressconfiguration.agic.enabled }}
+    appgw.ingress.kubernetes.io/cookie-based-affinity: "true"
+    appgw.ingress.kubernetes.io/session-affinity-cookie-name: "HDP-SESSION"
+    appgw.ingress.kubernetes.io/request-timeout: "30"
+    {{- if .Values.hdpingressconfiguration.tls.enabled }}
+    appgw.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
+    {{- end }}
+  name: {{ .Release.Name }}-{{ .Values.hdpingressconfiguration.ingressName }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  {{- if .Values.hdpingressconfiguration.haproxy.enabled }}
+  ingressClassName: {{ .Values.haproxyingress.controller.ingressClass }}
+  {{- else if .Values.hdpingressconfiguration.agic.enabled }}
+  ingressClassName: {{ .Values.hdpingressconfiguration.agic.ingressClass }}
+  {{- end }}
+  {{- if eq .Values.hdpingressconfiguration.clusterType "cloud" }}
+  {{- end }}
+  rules:
+  - host: {{ .Values.hdp.loadbalancer.hostName }}
+    http:
+      paths:
+      - backend:
+          service:
+            name: {{ .Release.Name }}-{{ .Values.hdp.services.hdpService.name }}
+            port:
+              number: {{ .Values.hdp.ports.hdpServer.port }}
+        path: /
+        pathType: Prefix
+        {{- if .Values.hdp.onPremiseConnector.enabled }}
+      - backend:
+          service:
+            name: {{ .Release.Name }}-{{ .Values.hdp.services.notificationService.name }}
+            port:
+              number: {{ .Values.hdp.ports.notificationServer.port }}
+        path: {{ .Values.hdp.services.notificationService.aclPath }}
+        pathType: Prefix
+        {{- range $ordinal := until $replicas }}
+        {{ $opaPath := (printf "%s-%s-%d" $global.Release.Name $global.Values.hdp.services.hdpService.name $ordinal) }}
+      - backend:
+          service:
+            name: {{ $global.Release.Name }}-{{ $global.Values.hdp.services.opAccessorService.name }}-{{ $ordinal }}
+            port:
+              number: {{ $global.Values.hdp.ports.opAccessor.port }}
+        path: {{ $global.Values.hdp.services.opAccessorService.aclPath }}_{{ $opaPath }}
+        pathType: Prefix
+        {{- end }}
+        {{- end }}
+  {{- if .Values.hdpingressconfiguration.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ .Values.hdp.loadbalancer.hostName }}
+    secretName: tls-cert
+  {{- end }} 
+

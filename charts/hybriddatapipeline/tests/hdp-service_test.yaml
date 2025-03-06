@@ -2,10 +2,12 @@ suite: hdp-service
 templates:
   - hdp-service.yaml
 tests:
-  - it: should render service with correct annotations and type when haproxy.kubernetesIngress.enabled is true
+  - it: should render service with correct annotations and type when hdpingressconfiguration.agic.enabled is true
     set:
       hdp.ports.hdpServer.port: 8081
       hdp.ports.hdpServer.targetPort: 8081
+      hdpingressconfiguration.haproxy.enabled: false
+      hdpingressconfiguration.agic.enabled: true
     asserts:
       - isKind:
           of: Service
@@ -20,11 +22,9 @@ tests:
       - equal:
           path: metadata.annotations
           value:
-            haproxy.org/check: "true"
-            haproxy.org/check-http: "HEAD /api/healthcheck"
-            haproxy.org/check-interval: "5m"
-            haproxy.org/affinity: "cookie"
-            haproxy.org/cookie-persistence: HDP-SESSION
+            appgw.ingress.kubernetes.io/probe-interval: 5m
+            appgw.ingress.kubernetes.io/probe-path: "true"
+            appgw.ingress.kubernetes.io/probe-protocol: HEAD /api/healthcheck
       - equal:
           path: spec.type
           value: ClusterIP
@@ -43,12 +43,12 @@ tests:
           path: spec.selector
           value:
             app: hdp-server-app
-              
-  - it: should render service with correct annotations and type when haproxy.kubernetesIngress.enabled is false
+            
+  - it: should render service with correct type when hdpingressconfiguration.clusterType is cloud
     set:
-      haproxy.kubernetesIngress.enabled: false
+      hdpingressconfiguration.clusterType: cloud
     asserts:
       - equal:
           path: spec.type
-          value: NodePort
+          value: ClusterIP
 

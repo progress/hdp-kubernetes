@@ -19,28 +19,40 @@ spec:
     spec:
       initContainers:
       - name: init-properties
-        image: "busybox:1.36.1"
-        imagePullPolicy: IfNotPresent
+        image: "{{.Values.hdp.image.repository}}:{{.Values.hdp.image.tag}}"
+        imagePullPolicy: {{.Values.hdp.image.pullPolicy}}
         securityContext:
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 10001
-          runAsGroup: 10001
+          readOnlyRootFilesystem: {{.Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+          runAsNonRoot: {{.Values.hdp.containerSecurityContext.runAsNonRoot }}
+          runAsUser: 12321
+          runAsGroup: 100
           capabilities:
             drop:
               - ALL
           seccompProfile:
             type: RuntimeDefault
-        {{- if .Values.haproxy.tls.enabled }}
-        command: ["/bin/sh", "-c", "mkdir -p /hdpshare && cp /hdpdeployprops/hdpdeploy.properties /hdpshare/hdpdeploy.properties && echo \'Config Map mounted and properties file copied to /hdpshare!\'; cat /certs/tls.crt /certs/tls.key > /hdpshare/hdp-cert.pem && echo \'Certificate copied to /hdpshare!\'"]
+        {{- if .Values.hdpingressconfiguration.tls.enabled }}
+        {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+        command: ["/bin/sh", "-c", "cp -Rv /home/hdpuser/Progress /app; mkdir -p /hdpshare && cp /hdpprops/*.properties /hdpshare/ && echo \'Config Map mounted and properties file copied to /hdpshare!\'; cat /certs/tls.crt /certs/tls.key > /hdpshare/hdp-cert.pem && echo \'Certificate copied to /hdpshare!\'"]
         {{- else }}
-        command: ["/bin/sh", "-c", "mkdir -p /hdpshare && cp /hdpdeployprops/hdpdeploy.properties /hdpshare/hdpdeploy.properties && echo \'Config Map mounted and properties file copied to /hdpshare!\'"]
+        command: ["/bin/sh", "-c", "mkdir -p /hdpshare && cp /hdpprops/*.properties /hdpshare/ && echo \'Config Map mounted and properties file copied to /hdpshare!\'; cat /certs/tls.crt /certs/tls.key > /hdpshare/hdp-cert.pem && echo \'Certificate copied to /hdpshare!\'"]
+        {{- end }}
+        {{- else }}
+        {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+        command: ["/bin/sh", "-c", "cp -Rv /home/hdpuser/Progress /app; mkdir -p /hdpshare && cp /hdpprops/*.properties /hdpshare/ && echo \'Config Map mounted and properties file copied to /hdpshare!\'"]
+        {{- else }}
+          command: ["/bin/sh", "-c", "mkdir -p /hdpshare && cp /hdpprops/*.properties /hdpshare/ && echo \'Config Map mounted and properties file copied to /hdpshare!\'"]
+        {{- end }}
         {{- end }}
         volumeMounts:
+        {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+        - name: hdp-app
+          mountPath: /app
+        {{- end }}  
         - name: properties
-          mountPath: /hdpdeployprops
-        {{- if .Values.haproxy.tls.enabled }}
+          mountPath: /hdpprops
+        {{- if .Values.hdpingressconfiguration.tls.enabled }}
         - name: certs
           mountPath: /certs
         {{- end }}  
@@ -52,14 +64,18 @@ spec:
           imagePullPolicy: {{.Values.hdp.image.pullPolicy}}
           securityContext:
             allowPrivilegeEscalation: false
-            runAsNonRoot: true
+            readOnlyRootFilesystem: {{.Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+            runAsNonRoot: {{.Values.hdp.containerSecurityContext.runAsNonRoot }}
             runAsUser: 12321
-            runAsGroup: 12321
+            runAsGroup: 100
             capabilities:
                 drop:   
                  - ALL    
             seccompProfile:
               type: RuntimeDefault
+          {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+          command: ["/bin/sh", "-c", "${HDP_INSTALL_HOME}/Progress/DataDirect/scripts/startup.sh"]
+          {{- end }}
           ports:
             - name: hdpserver
               containerPort: {{.Values.hdp.ports.hdpServer.port}}
@@ -70,13 +86,64 @@ spec:
             - name: internal
               containerPort: 8190
           env:
+          {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+            - name: HDP_INSTALL_HOME
+              value: /app
+          {{- end }}
             - name: ACCEPT_EULA
               value: "true"
+            - name: HDP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hdp-secrets
+                  key: hdp-admin-password
+            - name: HDP_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hdp-secrets
+                  key: hdp-user-password
+            - name: HDP_DATABASE_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: hdp-secrets
+                  key: account-database-admin-username
+            - name: HDP_DATABASE_ADMIN_PASSWORD 
+              valueFrom:
+                secretKeyRef:
+                  name: hdp-secrets
+                  key: account-database-admin-password
+            - name: HDP_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hdp-secrets
+                  key: account-database-user-username
+            - name: HDP_DATABASE_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hdp-secrets
+                  key: account-database-user-password
+            - name: HDP_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hdp-secrets
+                  key: hdp-license-key
           volumeMounts:
+          {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+          - name: hdp-app
+            mountPath: /app
+          - name: driver-schema-cache
+            mountPath: /home/hdpuser
+          - name: jvm-perf-cache
+            mountPath: /tmp
+          {{- end }}  
           - name: properties
-            mountPath: /hdpdeployprops
+            mountPath: /hdpprops
           - name: shared-storage-volume
-            mountPath: {{ .Values.hdp.persistence.mountPath }}
+            mountPath: {{ .Values.hdp.persistence.keystore.mountPath }}
+          {{- if .Values.hdp.persistence.logs.enabled }}
+          - name: logs-storage-volume
+            mountPath: {{ .Values.hdp.persistence.logs.mountPath }}
+          {{- end }}
           {{- if .Values.hdp.livenessProbe.enabled }}
           livenessProbe:
             httpGet:
@@ -118,16 +185,37 @@ spec:
               memory: {{.Values.hdp.resources.limits.memory}}
               cpu: {{.Values.hdp.resources.limits.cpu}}            
       volumes:
+        {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+        - name: hdp-app
+          emptyDir: {}
+        - name: driver-schema-cache
+          emptyDir:
+            medium: Memory
+        - name: jvm-perf-cache
+          emptyDir:
+            medium: Memory
+        {{- end }}    
         - name: shared-storage-volume
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-shared-storage-volume
+        {{- if .Values.hdp.persistence.logs.enabled }}
+        - name: logs-storage-volume
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-logs-storage-volume
+        {{- end }}
         - name: properties
-          configMap:
-            name: {{ .Release.Name }}-configmap
-        {{- if .Values.haproxy.tls.enabled }}
+          projected: 
+            sources:
+              - configMap:
+                  name: {{ .Release.Name }}-configmap
+              {{- if .Values.hdp.persistence.logs.enabled }}
+              - configMap:
+                  name: {{ .Release.Name }}-logging-properties-configmap
+              {{- end }}
+        {{- if .Values.hdpingressconfiguration.tls.enabled }}
         - name: certs
           secret:
-            secretName: {{ .Values.haproxy.tls.secretName }}
+            secretName: {{ .Values.hdpingressconfiguration.tls.secretName }}
         {{- end }}
       {{- if .Values.imagePullSecrets }}
       imagePullSecrets: {{- toYaml .Values.imagePullSecrets | nindent 8 }}

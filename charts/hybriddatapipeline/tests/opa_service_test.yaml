@@ -3,9 +3,10 @@ templates:
   - opa-service.yaml
 
 tests:
-  - it: should render the service with ClusterIP and annotations when haproxy.kubernetesIngress.enabled is true
+  - it: should render the service with ClusterIP and annotations when hdpingressconfiguration.agic.enabled is true
     set:
-      haproxy.kubernetesIngress.enabled: true
+      hdpingressconfiguration.haproxy.enabled: false
+      hdpingressconfiguration.agic.enabled: true
       hdp.services.opAccessorService.check: true
       hdp.services.opAccessorService.checkPath: /healthz
       hdp.services.opAccessorService.checkInterval: 10s
@@ -27,14 +28,14 @@ tests:
           path: spec.ports[0].port
           value: 8080
       - equal:
-          path: metadata.annotations["haproxy.org/check"]
+          path: metadata.annotations["appgw.ingress.kubernetes.io/probe-path"]
           value: "true"
       - equal:
-          path: metadata.annotations["haproxy.org/check-http"]
+          path: metadata.annotations["appgw.ingress.kubernetes.io/probe-protocol"]
           value: "HEAD /healthz"
       - equal:
-          path: metadata.annotations["haproxy.org/check-interval"]
-          value: "10s"
+          path: metadata.annotations["appgw.ingress.kubernetes.io/request-routing-rules"]
+          value: "PathBasedRouting"
       - equal:
-          path: metadata.annotations["haproxy.org/route-acl"]
-          value: "path_beg -i /opa_RELEASE-NAME-hdpserver-0"
+          path: metadata.annotations["appgw.ingress.kubernetes.io/backend-path-prefix"]
+          value: "/opa_RELEASE-NAME-hdpserver-0"

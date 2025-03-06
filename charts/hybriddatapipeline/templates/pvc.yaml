@@ -9,5 +9,5 @@ spec:
     - ReadWriteMany
   resources:
     requests:
-      storage: {{.Values.hdp.persistence.size}}
-  storageClassName: {{.Values.hdp.persistence.storageClassName}}
+      storage: {{.Values.hdp.persistence.keystore.size}}
+  storageClassName: {{.Values.hdp.persistence.keystore.storageClassName}}

@@ -20,12 +20,7 @@ sources:
 dependencies:
   - name: postgresql
     repository: https://charts.bitnami.com/bitnami
-    version: "13.2.30"
+    version: "16.4.3"
     condition: hdp.database.postgres.enabled
-  - name: kubernetes-ingress
-    alias: kubernetesingress
-    repository: https://haproxytech.github.io/helm-charts/
-    version: "1.38.2"
-    condition: haproxy.kubernetesIngress.enabled
 
-version: 0.2.0
+version: 1.0.1

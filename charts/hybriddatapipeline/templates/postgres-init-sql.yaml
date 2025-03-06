@@ -8,9 +8,9 @@ metadata:
 stringData:
   init.sh: |-
     set -e
-    export PGPASSWORD='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "account-database-secrets" "key" "privileged-database-password" "context" $) | trim }}'
-    PGUSER='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "account-database-secrets" "key" "privileged-database-username" "context" $) | trim }}'
-    PGDBNAME='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "account-database-secrets" "key" "privileged-database-name" "context" $) | trim }}'
+    export PGPASSWORD='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "account-database-secrets" "key" "privileged-postgres-password" "context" $) | trim }}'
+    PGUSER='postgres'
+    PGDBNAME='{{ .Values.postgresql.global.postgresql.auth.database }}'
 
     HDP_PG_DB_NAME={{.Values.hdp.database.postgres.databaseName}}
     HDP_PG_DB_SCHEMA_NAME={{.Values.hdp.database.postgres.schemaName}}

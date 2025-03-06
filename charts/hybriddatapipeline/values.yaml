@@ -1,41 +1,47 @@
-## Values for Progress DataDirect Hybrid Data Pipeline(HDP) Server Deployment
+## Progress DataDirect Hybrid Data Pipeline Helm Chart Manifest
 
-## Values used for Hybrid Data Pipeline(HDP) installation
+## Copyright 2025 Progress Software Corporation and/or its subsidiaries or affiliates. All Rights Reserved.
+
+## @section hdp The parameters for configuring the Hybrid Data Pipeline (HDP) server. The Hybrid Data Pipeline Helm chart is used to deploy the HDP server as a Kubernetes pod in a Kubernetes cluster.
+##
 hdp:
-  
-  ## Controls number of nodes to be deployed
+  ## @param hdp.replicaCount The number of HDP server nodes to be deployed
+  ##
   replicaCount: 2
-
-  ## HDP Docker image details
+  ## @param hdp.image.repository The fully qualified name of the registry login server and the name of HDP Docker image
+  ## @param hdp.image.tag The four digit tag used to identify a version of the Docker image
+  ## @param hdp.image.pullPolicy The policy for pulling the Docker image
+  ##
   image:
     repository: 
     tag: 
     pullPolicy: IfNotPresent
+  ## @param hdp.imagePullSecrets An array of secrets used to authenticate with the Docker registry
+  ##
   imagePullSecrets: []
-
-  ## HDP Server License Key, leave this blank to install HDP in Evaluation Mode
-  licenseKey: 
-
-  ## Hybrid Data Pipeline Server Container load balancer hostname
+  ## @param hdp.loadbalancer.hostName The name of the DNS record set used for external access to the HDP server
+  ##
   loadbalancer:
     hostName: 
-
-  ## Controls On-Premise Connector components configuration on the HDP Server side
-  ## This should be enabled to establish On-premise datastore connections
+  ## @param hdp.onPremiseConnector.enabled The parameter for enabling the On-Premises Connector
+  ##
   onPremiseConnector:
     enabled: true
-
-  ## Controls FIPS configuration on the HDP Server side
-  ## This should be enabled to run Hybrid Data Pipeline in FIPS mode
+  ## @param hdp.fips.enabled The parameter for enabling FIPS mode for the HDP server
+  ##
   fips:
     enabled: true
-  
-  ## Configure the Proxy related IP addresses on the HDP Server side
-  ## The IP address(es) should be separated by '|' character
+  ## @param hdp.proxy.ipAddresses A proxy IP address or list of proxy IP addresses separated by the '|' character
+  ##
   proxy:
     ipAddresses: 
-    
-  ## HDP Server ports
+  ## @param hdp.ports.hdpServer.port The external port on which the HDP server is exposed
+  ## @param hdp.ports.hdpServer.targetPort The internal port on which the application container is listening for the HDP service
+  ## @param hdp.ports.opAccessor.port The external port on which the On-Premises Access service is exposed
+  ## @param hdp.ports.opAccessor.targetPort The internal port on which the application container is listening for the On-Premises Access service
+  ## @param hdp.ports.notificationServer.port The external port on which the Notification Server is exposed
+  ## @param hdp.ports.notificationServer.targetPort The internal port on which the application container is listening for the Notification Server
+  ##
   ports:
     hdpServer:
       port: 8080
@@ -46,8 +52,13 @@ hdp:
     notificationServer:
       port: 11280
       targetPort: 11280
-
-  ## HDP Account database details, by default PostgreSQL is configured as account database
+  ## @param hdp.database.postgres.enabled The configuration for enabling the deployment of a PostgreSQL system database
+  ## @param hdp.database.postgres.hostName The hostname of the PostgreSQL database
+  ## @param hdp.database.postgres.port The port number of the PostgreSQL database
+  ## @param hdp.database.postgres.schemaName The name of the system database schema in the PostgreSQL database
+  ## @param hdp.database.postgres.databaseName The name of the PostgreSQL database
+  ## @param hdp.database.postgres.advancedOptions PostgreSQL Additional configurations for the PostgreSQL database
+  ##
   database:
     postgres:
       enabled: true
@@ -56,48 +67,99 @@ hdp:
       schemaName: hdp
       databaseName: hdp
       advancedOptions: 
+  ## @param hdp.persistence.keystore.mountPath The directory path within the container where the persistent volume will be mounted
+  ## @param hdp.persistence.keystore.size The size of the persistent volume to be requested
+  ## @param hdp.persistence.keystore.storageClassName The name of the StorageClass to be used for the persistent volume
+  ## @param hdp.persistence.logs.enabled The parameter for enabling persistent storage for logs
+  ## @param hdp.persistence.logs.mountPath The directory path within the container where the persistent volume for logs will be mounted
+  ## @param hdp.persistence.logs.size The size of the persistent volume to be requested for logs
+  ## @param hdp.persistence.logs.storageClassName The name of the StorageClass to be used for the persistent volume for logs
+  persistence:
+    keystore:
+      mountPath: /hdpshare
+      size: 1Gi
+      storageClassName: 
+    logs:
+      enabled: true
+      mountPath: /logs
+      size: 1Gi
+      storageClassName: 
+  ## @param hdp.containerSecurityContext.readOnlyRootFilesystem The parameter for setting the root filesystem as read-only
+  ## @param hdp.containerSecurityContext.runAsNonRoot The parameter for running the container as a non-root user
+  ##
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
 
-  ## HDP Server Container storage parameters
-  persistence:    
-    mountPath: /hdpshare
-    size: 1Gi
-    storageClassName: 
-
-  ## HDP Server Container resources parameters
+  ## @param hdp.resources.requests.memory The minimum RAM for the server container
+  ## @param hdp.resources.requests.cpu The minimum CPU for the server container
+  ## @param hdp.resources.limits.memory The maximum RAM for the server container
+  ## @param hdp.resources.limits.cpu The maximum CPU for the server container
+  ##
   resources:
     requests:
-      memory: "4096Mi"
+      memory: "8192Mi"
       cpu: "2000m"
     limits:
-      memory: "4096Mi"
+      memory: "8192Mi"
       cpu: "2000m"
-  
-  ## HDP Server Container probe parameters
+  ## @param hdp.livenessProbe.enabled The parameter for enabling the container liveness probe
+  ## @param hdp.livenessProbe.initialDelaySeconds The number of seconds after the container has started before the liveness probe is initiated
+  ## @param hdp.livenessProbe.periodSeconds The frequency in seconds that Kubernetes performs the liveness check
+  ## @param hdp.livenessProbe.timeoutSeconds The number of seconds after which the liveness probe times out
+  ## @param hdp.livenessProbe.failureThreshold The number of consecutive failures required for the liveness probe to be considered failed
+  ## @param hdp.livenessProbe.successThreshold The number of consecutive successes required for the liveness probe to be considered successful
+  ##
   livenessProbe:
     enabled: true
     initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
+    periodSeconds: 30
+    timeoutSeconds: 30
+    failureThreshold: 3
     successThreshold: 1
-  
+  ## @param hdp.readinessProbe.enabled The parameter for enabling the container readiness probe
+  ## @param hdp.readinessProbe.initialDelaySeconds The number of seconds after the container has started before the readiness probe is initiated
+  ## @param hdp.readinessProbe.periodSeconds The frequency in seconds that Kubernetes performs the readiness check
+  ## @param hdp.readinessProbe.timeoutSeconds The number of seconds after which the readiness probe times out
+  ## @param hdp.readinessProbe.failureThreshold The number of consecutive failures required for the readiness probe to be considered failed
+  ## @param hdp.readinessProbe.successThreshold The number of consecutive successes required for the readiness probe to be considered successful
+  ##
   readinessProbe:
     enabled: true
     initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
+    periodSeconds: 30
+    timeoutSeconds: 30
     failureThreshold: 3
     successThreshold: 1
-
+  ## @param hdp.startupProbe.enabled The parameter for enabling the container startup probe
+  ## @param hdp.startupProbe.initialDelaySeconds The number of seconds after the container has started before the startup probe is initiated
+  ## @param hdp.startupProbe.periodSeconds The frequency in seconds that Kubernetes performs the startup check
+  ## @param hdp.startupProbe.timeoutSeconds The number of seconds after which the startup probe times out
+  ## @param hdp.startupProbe.failureThreshold The number of consecutive failures required for the startup probe to be considered failed
+  ## @param hdp.startupProbe.successThreshold The number of consecutive successes required for the startup probe to be considered successful
+  ##
   startupProbe:
     enabled: true
     initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 30
+    periodSeconds: 30
+    timeoutSeconds: 30
+    failureThreshold: 3
     successThreshold: 1
-
-  ## HDP Server Container services
+  ## @param hdp.services.hdpService.name The name of the Hybrid Data Pipeline service
+  ## @param hdp.services.hdpService.check The parameter for enabling a health check against the server
+  ## @param hdp.services.hdpService.checkInterval The frequency of the health check
+  ## @param hdp.services.hdpService.checkPath The check path for the server
+  ## @param hdp.services.opAccessorService.name The name of the On-Premises Access service
+  ## @param hdp.services.opAccessorService.check The parameter for enabling a health check against On-Premises Access service
+  ## @param hdp.services.opAccessorService.checkInterval The frequency of the health check
+  ## @param hdp.services.opAccessorService.checkPath The check path for the On-Premises Access service
+  ## @param hdp.services.opAccessorService.aclPath The ACL path for the On-Premises Access service
+  ## @param hdp.services.notificationService.name The name of the Notification Server service
+  ## @param hdp.services.notificationService.check The parameter for enabling a health check against the Notification Server service
+  ## @param hdp.services.notificationService.checkInterval The frequency of the health check
+  ## @param hdp.services.notificationService.checkPath The check path for the Notification Server service
+  ## @param hdp.services.notificationService.aclPath The ACL path for the Notification Server service
+  ##
   services:
     hdpService:
       name: hdpserver
@@ -117,38 +179,77 @@ hdp:
       checkPath: /
       aclPath: /connect/X_DataDirect_Notification_Server
 
-## HAProxy Kubneretes Ingress Helm Chart Configuration
-haproxy:
-  kubernetesIngress:
-    enabled: true
-    ingressName: "hdp-ingress"
-  ## Configure TLS for HAProxy
-  ## Put the PEM-formatted SSL certificate and private key into a secret and provide the secret name in the secretName field.
-  ## To generate the secret in Kubernetes: kubectl create secret tls tls-cert --cert=mycert.pem --key=privkey.pem
+## @section hdpingressconfiguration The parameters for configuring the Ingress for the HDP server
+##
+hdpingressconfiguration:
+  ## @param hdpingressconfiguration.enabled The parameter for enabling ingress to the HDP server
+  ## @param hdpingressconfiguration.ingressName The name of the ingress resource that will be created and managed
+  ## @param hdpingressconfiguration.agic.enabled The parameter for enabling Azure Application Gateway Ingress (AGIC ingress)
+  ## @param hdpingressconfiguration.agic.ingressClass The ingress class to be used by the Azure Application Gateway Ingress Controller (AGIC)
+  ## @param hdpingressconfiguration.haproxy.enabled The parameter for enabling HAProxy ingress (not yet supported)
+  ## @param hdpingressconfiguration.clusterType The type of cluster on which the HDP server is deployed (on-premises deployments are not yet supported)
+  ## @note "cloud" and "onpremise" are valid values (on-premises deployments are not yet supported)
+  ## @param hdpingressconfiguration.tls.enabled The parameter for enabling TLS communication with the HDP server
+  ## @param hdpingressconfiguration.tls.secretName The name of the Kubernetes Secret that contains the TLS certificate and private key
+  ## @note The PEM-formatted SSL certificate and private key must be used to create a Kubernetes secret
+  ## @example: kubectl create secret tls tls-cert --cert=mycert.pem --key=privkey.pem
+  ## @note The name of the secret must be specified with the secretName parameter
+  ##
+  enabled: true
+  ingressName: "hdp-ingress"
+  agic:
+    enabled: true  
+    ingressClass: "azure-application-gateway"
+  haproxy:
+    enabled: false # HAProxy ingress is not yet supported
+  clusterType: "cloud" # On-premises deployments are not yet supported
   tls:
     enabled: false
     secretName: ""
 
-## Kubneretes Ingress Controller Configuration
-kubernetesingress:
-  controller:
-    ingressClass: haproxy
-    service:
-      type: "LoadBalancer"
-      externalTrafficPolicy: Local
-    annotations:
-      service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"
-
-## PostgreSQL Helm Chart Configuration
+## @section PostgreSQL Helm chart parameters The parameters for configuring the PostgreSQL Helm chart
+##
 postgresql:
+  ## @param postgresql.global.postgresql.auth.database Name of the database
+  ## @param postgresql.global.postgresql.auth.existingSecret The name of an existing Kubernetes Secret that contains the authentication credentials for the PostgreSQL system database
+  ## @param postgresql.global.postgresql.auth.secretKeys.adminPasswordKey The key in the existing Secret that contains the admin password for PostgreSQL
+  ##
   global:
     postgresql:
       auth:
+        database: "postgres"
         existingSecret: "account-database-secrets"
         secretKeys:
-          adminPasswordKey: "privileged-database-password"
+          adminPasswordKey: "privileged-postgres-password"
   primary:
+    ## @param postgresql.primary.extraEnvVars.name The name of the environment variable
+    ## @param postgresql.primary.extraEnvVars.value The maximum number of concurrent connections allowed to the PostgreSQL database
+    ## @note Scale postgresql.primary.extraEnvVars.value according to replicaCount
+    ## @param postgresql.primary.resources.requests.cpu The minimum CPU for the primary PostgreSQL instance
+    ## @param postgresql.primary.resources.requests.memory The minimum RAM for the primary PostgreSQL instance
+    ## @param postgresql.primary.resources.limits.cpu The maximum CPU for the primary PostgreSQL instance
+    ## @param postgresql.primary.resources.limits.memory The maximum RAM for the primary PostgreSQL instance
+    ## @param postgresql.primary.fullname The full name of the primary PostgreSQL instance
+    ## @param postgresql.primary.initdb.scriptsSecret The name of the Kubernetes Secret that contains initialization scripts for PostgreSQL
+    ## @param postgresql.primary.containerSecurityContext.enabled The parameter for enabling the container security context
+    ## @param postgresql.primary.containerSecurityContext.runAsNonRoot The parameter for running the container as a non-root user
+    ## @param postgresql.primary.containerSecurityContext.runAsUser The user ID to run the container
+    ## @param postgresql.primary.containerSecurityContext.runAsGroup The group ID to run the container
+    extraEnvVars:
+      - name: POSTGRESQL_MAX_CONNECTIONS
+        value: "400"
+    resources:
+      requests:
+        cpu: "2"      
+        memory: "4Gi"  
+      limits:
+        cpu: "4" 
+        memory: "8Gi"
     fullname: "postgresql"
     initdb:
       scriptsSecret: "postgres-initsql"
-
+    containerSecurityContext:
+      enabled: true
+      runAsNonRoot: true
+      runAsUser: 12321
+      runAsGroup: 12321

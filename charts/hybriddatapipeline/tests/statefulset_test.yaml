@@ -63,8 +63,8 @@ tests:
           path: spec.template.spec.containers[0].ports[2].containerPort
           value: 8082
       - equal:
-          path: spec.template.spec.containers[0].volumeMounts[1].mountPath
-          value: "/data"
+          path: spec.template.spec.containers[0].volumeMounts[4].mountPath
+          value: "/hdpshare"
       - equal:
           path: spec.template.spec.containers[0].livenessProbe.httpGet.port
           value: 8080
@@ -114,5 +114,8 @@ tests:
           path: spec.template.spec.containers[0].resources.limits.cpu
           value: "500m"
       - equal:
-          path: spec.template.spec.volumes[1].configMap.name
+          path: spec.template.spec.volumes[5].projected.sources[0].configMap.name
           value: "RELEASE-NAME-configmap"
+      - equal:
+          path: spec.template.spec.volumes[5].projected.sources[1].configMap.name
+          value: "RELEASE-NAME-logging-properties-configmap"
