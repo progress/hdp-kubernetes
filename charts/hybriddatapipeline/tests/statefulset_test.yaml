@@ -7,6 +7,7 @@ tests:
   - it: should render the statefulset with the correct release name and service name
     set:
       hdp.services.hdpService.name: "hdp-service"
+      hdp.eula.accepted: "true"
       hdp.replicaCount: 3
       hdp.updateStrategy.type: "RollingUpdate"
       hdp.image.repository: "my-repo"

@@ -5,6 +5,13 @@
 ## @section hdp The parameters for configuring the Hybrid Data Pipeline (HDP) server. The Hybrid Data Pipeline Helm chart is used to deploy the HDP server as a Kubernetes pod in a Kubernetes cluster.
 ##
 hdp:
+  ## This section manages the End User License Agreement (EULA) acceptance.
+  ## Setting 'accepted: true' indicates that you have read and agreed to the EULA.
+  ## Failure to accept the EULA may result in deployment failure.
+  ## you can review EULA here: https://www.progress.com/legal/license-agreements/datadirect 
+  eula:
+    accepted: "false"  # Indicates explicit acceptance of the EULA. Set to "true" to proceed. Review the EULA before accepting.
+    
   ## @param hdp.replicaCount The number of HDP server nodes to be deployed
   ##
   replicaCount: 2

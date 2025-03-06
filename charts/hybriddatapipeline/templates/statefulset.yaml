@@ -91,7 +91,7 @@ spec:
               value: /app
           {{- end }}
             - name: ACCEPT_EULA
-              value: "true"
+              value: "{{.Values.hdp.eula.accepted}}"
             - name: HDP_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
