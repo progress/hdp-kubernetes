@@ -224,12 +224,14 @@ hdpingressconfiguration:
 ## @section PostgreSQL Helm Chart parameters The parameters for configuring the PostgreSQL Helm Chart
 ##
 postgresql:
+  ## @param postgresql.nameOverride String to partially override postgresql.fullname template (will maintain the release name) #@note This allows you to override the name used for the app.kubernetes.io/name label and related resources.
   ## @param postgresql.global.security.allowInsecureImages The parameter for skipping image verification
   ## @note Set to true to skip image verification. This is generally not recommended for production environments.
   ## @param postgresql.global.postgresql.auth.database The name of the PostgreSQL system database to be created
   ## @param postgresql.global.postgresql.auth.existingSecret The name of an existing Kubernetes Secret that contains the authentication credentials for the PostgreSQL system database
   ## @param postgresql.global.postgresql.auth.secretKeys.adminPasswordKey The key in the existing Secret that contains the admin password for PostgreSQL
   ##
+  nameOverride: "postgresql"
   global:
     security: 
       allowInsecureImages: false
@@ -276,7 +278,6 @@ postgresql:
     ## @param postgresql.primary.resources.limits.memory The maximum RAM for the primary PostgreSQL instance
     ## @note For memory, values must be specified in Mi (Mebibytes) or Gi (Gibibytes). For example, 4096Mi or 4Gi.
     ## @note For CPU, values must be specified in millicores (m) or whole cores. For example, 2000m or 2.
-    ## @param postgresql.primary.fullname The full name of the primary PostgreSQL instance
     ## @param postgresql.primary.initdb.scriptsSecret The name of the Kubernetes Secret that contains initialization scripts for PostgreSQL
     ## @param postgresql.primary.containerSecurityContext.enabled The parameter for enabling the container security context
     ## @param postgresql.primary.containerSecurityContext.runAsNonRoot The parameter for running the container as a non-root user
@@ -298,7 +299,6 @@ postgresql:
       limits:
         cpu: 4
         memory: 8Gi
-    fullname: "postgresql"
     initdb:
       scriptsSecret: "postgres-initsql"
     containerSecurityContext:
