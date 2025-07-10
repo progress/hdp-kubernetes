@@ -23,4 +23,4 @@ dependencies:
     version: "16.4.3"
     condition: hdp.database.postgres.enabled
 
-version: 1.0
+version: 1.0.0

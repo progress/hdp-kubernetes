@@ -13,7 +13,7 @@ The Hybrid Data Pipeline Kubernetes Helm chart bootstraps a Hybrid Data Pipeline
 
 ## Compatibility
 
-The following versions of Kubernetes and Helm are required to deploy Hybrid Data Pipeline Helm chart version 1.0:
+The following versions of Kubernetes and Helm are required to deploy Hybrid Data Pipeline Helm chart version 1.0.0:
 
 * Kubernetes 1.30.7+
 * Helm 3.15.2+
