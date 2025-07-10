@@ -27,7 +27,7 @@ tests:
           path: metadata.annotations
           value:
             appgw.ingress.kubernetes.io/cookie-based-affinity: "true"
-            appgw.ingress.kubernetes.io/request-timeout: "30" 
+            appgw.ingress.kubernetes.io/request-timeout: "300" 
             appgw.ingress.kubernetes.io/session-affinity-cookie-name: HDP-SESSION  
             appgw.ingress.kubernetes.io/ssl-redirect: "true"
       - equal:

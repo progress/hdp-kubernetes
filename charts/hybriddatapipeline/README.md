@@ -8,11 +8,12 @@ The Hybrid Data Pipeline Kubernetes Helm chart bootstraps a Hybrid Data Pipeline
 
 * Hybrid Data Pipeline cluster
 * Persistent volume for shared files
+* Persistent volume for logs
 * PostgreSQL system database (dependency on Bitnami PostgreSQL Helm chart)
 
 ## Compatibility
 
-The following versions of Kubernetes and Helm are required to deploy Hybrid Data Pipeline Helm chart version 1.0.1:
+The following versions of Kubernetes and Helm are required to deploy Hybrid Data Pipeline Helm chart version 1.0:
 
 * Kubernetes 1.30.7+
 * Helm 3.15.2+

@@ -2,16 +2,17 @@
 
 ## Copyright 2025 Progress Software Corporation and/or its subsidiaries or affiliates. All Rights Reserved.
 
-## @section hdp The parameters for configuring the Hybrid Data Pipeline (HDP) server. The Hybrid Data Pipeline Helm chart is used to deploy the HDP server as a Kubernetes pod in a Kubernetes cluster.
+## @section hdp The parameters for configuring the Hybrid Data Pipeline (HDP) server. The Hybrid Data Pipeline Helm Chart is used to deploy the HDP server as a Kubernetes pod in a Kubernetes cluster.
 ##
 hdp:
-  ## This section manages the End User License Agreement (EULA) acceptance.
-  ## Setting 'accepted: true' indicates that you have read and agreed to the EULA.
-  ## Failure to accept the EULA may result in deployment failure.
-  ## you can review EULA here: https://www.progress.com/legal/license-agreements/datadirect 
+  ## @param hdp.eula.accepted This parameter manages the End User License Agreement (EULA) acceptance.
+  ## @note You may only use this Helm Chart if you have accepted the EULA for the HDP product. Your use of this Helm Chart is governed by the EULA. Furthermore, you acknowledge and agree that you shall solely use this Helm Chart in conjunction with HDP as intended by Progress Software. You further acknowledge and agree that Progress Software is not responsible for any loss, costs, or damages directly or indirectly incurred due to your use of this Helm Chart in ways not intended or contemplated by us.
+  ## @note Progress Software is not responsible for and expressly disclaims all warranties of any kind with respect to such use of this Helm Chart in ways not intended or contemplated by Progress Software.
+  ## @note You can review the EULA here: https://www.progress.com/legal/license-agreements/datadirect 
+  ## @note Setting 'accepted: true' indicates that you have read and agreed to the EULA.
+  ## @note Failure to accept the EULA may result in deployment failure.
   eula:
-    accepted: "false"  # Indicates explicit acceptance of the EULA. Set to "true" to proceed. Review the EULA before accepting.
-    
+    accepted: false  # Indicates explicit acceptance of the EULA. Set to true to proceed. Review the EULA before accepting.
   ## @param hdp.replicaCount The number of HDP server nodes to be deployed
   ##
   replicaCount: 2
@@ -24,6 +25,9 @@ hdp:
     tag: 
     pullPolicy: IfNotPresent
   ## @param hdp.imagePullSecrets An array of secrets used to authenticate with the Docker registry
+  ## @example
+  ## imagePullSecrets:
+  ##   - myRegistryKeySecretName
   ##
   imagePullSecrets: []
   ## @param hdp.loadbalancer.hostName The name of the DNS record set used for external access to the HDP server
@@ -41,7 +45,7 @@ hdp:
   ## @param hdp.proxy.ipAddresses A proxy IP address or list of proxy IP addresses separated by the '|' character
   ##
   proxy:
-    ipAddresses: 
+    ipAddresses:
   ## @param hdp.ports.hdpServer.port The external port on which the HDP server is exposed
   ## @param hdp.ports.hdpServer.targetPort The internal port on which the application container is listening for the HDP service
   ## @param hdp.ports.opAccessor.port The external port on which the On-Premises Access service is exposed
@@ -97,19 +101,20 @@ hdp:
   containerSecurityContext:
     readOnlyRootFilesystem: true
     runAsNonRoot: true
-
   ## @param hdp.resources.requests.memory The minimum RAM for the server container
   ## @param hdp.resources.requests.cpu The minimum CPU for the server container
   ## @param hdp.resources.limits.memory The maximum RAM for the server container
   ## @param hdp.resources.limits.cpu The maximum CPU for the server container
-  ##
+  ## @note For memory, values must be specified in Mi (Mebibytes) or Gi (Gibibytes). For example, 4096Mi or 4Gi.
+  ## @note For CPU, values must be specified in millicores (m) or whole cores. For example, 2000m or 2.
+  ## 
   resources:
     requests:
-      memory: "8192Mi"
-      cpu: "2000m"
+      memory: 4096Mi
+      cpu: 2000m
     limits:
-      memory: "8192Mi"
-      cpu: "2000m"
+      memory: 4096Mi
+      cpu: 2000m
   ## @param hdp.livenessProbe.enabled The parameter for enabling the container liveness probe
   ## @param hdp.livenessProbe.initialDelaySeconds The number of seconds after the container has started before the liveness probe is initiated
   ## @param hdp.livenessProbe.periodSeconds The frequency in seconds that Kubernetes performs the liveness check
@@ -170,18 +175,18 @@ hdp:
   services:
     hdpService:
       name: hdpserver
-      check: "true"
+      check: true
       checkInterval: 5m
       checkPath: /api/healthcheck
     opAccessorService:
       name: opaccessor
-      check: "true"
+      check: true
       checkInterval: 5m
       checkPath: /
       aclPath: /connect/opa
     notificationService:
       name: notificationserver
-      check: "true"
+      check: true
       checkInterval: 5m
       checkPath: /
       aclPath: /connect/X_DataDirect_Notification_Server
@@ -196,6 +201,7 @@ hdpingressconfiguration:
   ## @param hdpingressconfiguration.haproxy.enabled The parameter for enabling HAProxy ingress (not yet supported)
   ## @param hdpingressconfiguration.clusterType The type of cluster on which the HDP server is deployed (on-premises deployments are not yet supported)
   ## @note "cloud" and "onpremise" are valid values (on-premises deployments are not yet supported)
+  ## @param hdpingressconfiguration.timeout The timeout in seconds for the ingress controller or load balancer to respond to requests
   ## @param hdpingressconfiguration.tls.enabled The parameter for enabling TLS communication with the HDP server
   ## @param hdpingressconfiguration.tls.secretName The name of the Kubernetes Secret that contains the TLS certificate and private key
   ## @note The PEM-formatted SSL certificate and private key must be used to create a Kubernetes secret
@@ -210,25 +216,57 @@ hdpingressconfiguration:
   haproxy:
     enabled: false # HAProxy ingress is not yet supported
   clusterType: "cloud" # On-premises deployments are not yet supported
+  timeout: 300
   tls:
     enabled: false
     secretName: ""
 
-## @section PostgreSQL Helm chart parameters The parameters for configuring the PostgreSQL Helm chart
+## @section PostgreSQL Helm Chart parameters The parameters for configuring the PostgreSQL Helm Chart
 ##
 postgresql:
-  ## @param postgresql.global.postgresql.auth.database Name of the database
+  ## @param postgresql.global.security.allowInsecureImages The parameter for skipping image verification
+  ## @note Set to true to skip image verification. This is generally not recommended for production environments.
+  ## @param postgresql.global.postgresql.auth.database The name of the PostgreSQL system database to be created
   ## @param postgresql.global.postgresql.auth.existingSecret The name of an existing Kubernetes Secret that contains the authentication credentials for the PostgreSQL system database
   ## @param postgresql.global.postgresql.auth.secretKeys.adminPasswordKey The key in the existing Secret that contains the admin password for PostgreSQL
   ##
   global:
+    security: 
+      allowInsecureImages: false
     postgresql:
       auth:
         database: "postgres"
         existingSecret: "account-database-secrets"
         secretKeys:
           adminPasswordKey: "privileged-postgres-password"
+  ## Bitnami PostgreSQL image version
+  ## ref: https://hub.docker.com/r/bitnami/postgresql/tags/
+  ## @param postgresql.image.registry The PostgreSQL image registry [default: REGISTRY_NAME] 
+  ## @param postgresql.image.repository The PostgreSQL image repository [default: REPOSITORY_NAME/postgresql] 
+  ## @param postgresql.image.tag The PostgreSQL image tag (immutable tags are recommended)
+  ## @param postgresql.image.digest The PostgreSQL image digest. For example, sha256:aa.... Please note that this parameter, if set, will override the tag.
+  ## @param postgresql.image.pullPolicy The PostgreSQL image pull policy
+  ##
+  image:
+    registry: docker.io
+    repository: bitnami/postgresql
+    tag: 16.6.0
+    digest: ""
+    pullPolicy: IfNotPresent
+    ## @param postgresql.image.pullSecrets The parameter to specify image pull secrets
+    ## Optionally specify an array of imagePullSecrets
+    ## Secrets must be manually created in the namespace
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+    ## @example:
+    ## pullSecrets:
+    ##   - myRegistryKeySecretName
+    ##
+    pullSecrets: []  
   primary:
+    ## @param postgresql.primary.persistence.mountPath The path where the persistent volume will be mounted
+    ## @param postgresql.primary.persistence.storageClass The name of the StorageClass to be used for the persistent volume
+    ## @param postgresql.primary.persistence.size The size of the persistent volume to be requested
+    ## @param postgresql.primary.persistence.accessModes The access modes for the persistent volume
     ## @param postgresql.primary.extraEnvVars.name The name of the environment variable
     ## @param postgresql.primary.extraEnvVars.value The maximum number of concurrent connections allowed to the PostgreSQL database
     ## @note Scale postgresql.primary.extraEnvVars.value according to replicaCount
@@ -236,22 +274,30 @@ postgresql:
     ## @param postgresql.primary.resources.requests.memory The minimum RAM for the primary PostgreSQL instance
     ## @param postgresql.primary.resources.limits.cpu The maximum CPU for the primary PostgreSQL instance
     ## @param postgresql.primary.resources.limits.memory The maximum RAM for the primary PostgreSQL instance
+    ## @note For memory, values must be specified in Mi (Mebibytes) or Gi (Gibibytes). For example, 4096Mi or 4Gi.
+    ## @note For CPU, values must be specified in millicores (m) or whole cores. For example, 2000m or 2.
     ## @param postgresql.primary.fullname The full name of the primary PostgreSQL instance
     ## @param postgresql.primary.initdb.scriptsSecret The name of the Kubernetes Secret that contains initialization scripts for PostgreSQL
     ## @param postgresql.primary.containerSecurityContext.enabled The parameter for enabling the container security context
     ## @param postgresql.primary.containerSecurityContext.runAsNonRoot The parameter for running the container as a non-root user
     ## @param postgresql.primary.containerSecurityContext.runAsUser The user ID to run the container
     ## @param postgresql.primary.containerSecurityContext.runAsGroup The group ID to run the container
+    persistence:
+      mountPath: /bitnami/postgresql
+      storageClass: ""
+      size: 8Gi
+      accessModes: 
+        - ReadWriteOnce
     extraEnvVars:
       - name: POSTGRESQL_MAX_CONNECTIONS
         value: "400"
     resources:
       requests:
-        cpu: "2"      
-        memory: "4Gi"  
+        cpu: 2   
+        memory: 4Gi
       limits:
-        cpu: "4" 
-        memory: "8Gi"
+        cpu: 4
+        memory: 8Gi
     fullname: "postgresql"
     initdb:
       scriptsSecret: "postgres-initsql"

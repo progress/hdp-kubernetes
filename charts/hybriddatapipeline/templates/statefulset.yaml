@@ -1,3 +1,9 @@
+{{- $reqMem := (toString (default "4096Mi" .Values.hdp.resources.requests.memory)) -}}
+{{- $limMem := (toString (default "4096Mi" .Values.hdp.resources.limits.memory)) -}}
+{{- $reqCpu := (toString (default "2000m" .Values.hdp.resources.requests.cpu)) -}}
+{{- $limCpu := (toString (default "2000m" .Values.hdp.resources.limits.cpu)) -}}
+# Call the validation helper
+{{- include "hdp.resources.validate" (dict "requests" (dict "memory" $reqMem "cpu" $reqCpu) "limits" (dict "memory" $limMem "cpu" $limCpu)) }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -179,11 +185,11 @@ spec:
           {{- end }}
           resources:
             requests:
-              memory: {{.Values.hdp.resources.requests.memory}}
-              cpu: {{.Values.hdp.resources.requests.cpu}}
+              memory: {{ $reqMem | quote }}
+              cpu: {{ $reqCpu | quote }}
             limits:
-              memory: {{.Values.hdp.resources.limits.memory}}
-              cpu: {{.Values.hdp.resources.limits.cpu}}            
+              memory: {{ $limMem | quote }}
+              cpu: {{ $limCpu | quote }}       
       volumes:
         {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
         - name: hdp-app
@@ -217,6 +223,9 @@ spec:
           secret:
             secretName: {{ .Values.hdpingressconfiguration.tls.secretName }}
         {{- end }}
-      {{- if .Values.imagePullSecrets }}
-      imagePullSecrets: {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- if .Values.hdp.imagePullSecrets }}
+      imagePullSecrets: 
+      {{- range .Values.hdp.imagePullSecrets }}
+        - name: {{ . }}
+      {{- end }}
       {{- end }}

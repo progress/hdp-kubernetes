@@ -102,3 +102,34 @@ yes
 no
 {{- end -}}
 {{- end -}}
+
+{{/* Validate resource units for memory and CPU */}}
+{{- define "hdp.resources.validate" -}}
+{{- if not (regexMatch "^[0-9]+(Mi|Gi)$" .requests.memory) }}
+{{- fail "Memory request must be specified in Mi or Gi, e.g., 512Mi or 1Gi" }}
+{{- end }}
+{{- if not (regexMatch "^[0-9]+(Mi|Gi)$" .limits.memory) }}
+{{- fail "Memory limit must be specified in Mi or Gi, e.g., 512Mi or 1Gi" }}
+{{- end }}
+{{- if not (regexMatch "^[0-9]+(m)?$" .requests.cpu) }}
+{{- fail "CPU request must be specified in cores or millicores, e.g., 500m or 1" }}
+{{- end }}
+{{- if not (regexMatch "^[0-9]+(m)?$" .limits.cpu) }}
+{{- fail "CPU limit must be specified in cores or millicores, e.g., 1 or 500m" }}
+{{- end }}
+{{- end }}
+
+{{/*
+  Helper function to convert memory values with Mi or Gi suffix to megabytes (MB, base 1000).
+  Usage: {{ include "toMegabytes" "512Mi" }} or {{ include "toMegabytes" "2Gi" }}
+*/}}
+{{- define "toMegabytes" -}}
+{{- $val := . | toString -}}
+{{- if hasSuffix "Gi" $val -}}
+  {{- $val | trimSuffix "Gi" | int | mul 1024 -}}
+{{- else if hasSuffix "Mi" $val -}}
+  {{- $val | trimSuffix "Mi" | int -}}
+{{- else -}}
+  {{- $val | int -}}
+{{- end -}}
+{{- end }}

@@ -8,12 +8,12 @@ metadata:
     {{- if .Values.hdpingressconfiguration.haproxy.enabled }}
     haproxy.org/forwarded-for: "true"
     haproxy.org/load-balance: roundrobin
-    haproxy.org/timeout-check: 5m
-    haproxy.org/timeout-server: 5m
+    haproxy.org/timeout-check: {{ .Values.hdpingressconfiguration.timeout | default 300 | quote }}
+    haproxy.org/timeout-server: {{ .Values.hdpingressconfiguration.timeout | default 300 | quote }}
     {{- else if .Values.hdpingressconfiguration.agic.enabled }}
     appgw.ingress.kubernetes.io/cookie-based-affinity: "true"
     appgw.ingress.kubernetes.io/session-affinity-cookie-name: "HDP-SESSION"
-    appgw.ingress.kubernetes.io/request-timeout: "30"
+    appgw.ingress.kubernetes.io/request-timeout: {{ .Values.hdpingressconfiguration.timeout | default 300 | quote }}
     {{- if .Values.hdpingressconfiguration.tls.enabled }}
     appgw.ingress.kubernetes.io/ssl-redirect: "true"
     {{- end }}
@@ -62,6 +62,6 @@ spec:
   tls:
   - hosts:
     - {{ .Values.hdp.loadbalancer.hostName }}
-    secretName: tls-cert
+    secretName: {{ .Values.hdpingressconfiguration.tls.secretName }}
   {{- end }} 
 
