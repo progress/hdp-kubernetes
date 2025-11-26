@@ -1,0 +1,330 @@
+suite: Node, Pod Affinity, Pod Anti-affinity Tests
+templates:
+  - statefulset.yaml
+chart:
+  version: 1.0.1
+tests:
+  # Test 1: Default behavior - no affinity configured
+  - it: should not render affinity when not configured
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity: {}
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - notExists:
+          path: spec.template.spec.affinity
+
+  # Test 2: Simple node affinity - required scheduling
+  - it: should render required node affinity correctly
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64"]
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: "kubernetes.io/arch"
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: "In"
+      - contains:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values
+          content: "amd64"
+
+  # Test 3: Simple node affinity - preferred scheduling
+  - it: should render preferred node affinity correctly
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: storage-type
+                operator: In
+                values: ["ssd"]
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].preference.matchExpressions[0].key
+          value: "storage-type"
+
+  # Test 4: Multiple operators - NotIn, Exists, DoesNotExist
+  - it: should handle advanced node affinity operators
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-class
+                operator: NotIn
+                values: ["spot", "preemptible"]
+              - key: gpu-enabled
+                operator: Exists
+              - key: maintenance-mode
+                operator: DoesNotExist
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: "NotIn"
+      - contains:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values
+          content: "spot"
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[1].operator
+          value: "Exists"
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[2].operator
+          value: "DoesNotExist"
+
+  # Test 5: Pod anti-affinity - required
+  - it: should render required pod anti-affinity correctly
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: hdp
+            topologyKey: kubernetes.io/hostname
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: "kubernetes.io/hostname"
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels["app.kubernetes.io/name"]
+          value: "hdp"
+
+  # Test 6: Pod anti-affinity - preferred
+  - it: should render preferred pod anti-affinity correctly
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: hdp
+              topologyKey: topology.kubernetes.io/zone
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey
+          value: "topology.kubernetes.io/zone"
+
+  # Test 7: Complete production configuration
+  - it: should render complex production affinity configuration
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64"]
+              - key: kubernetes.io/os
+                operator: In
+                values: ["linux"]
+              - key: node-class
+                operator: NotIn
+                values: ["spot"]
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: storage-type
+                operator: In
+                values: ["ssd", "nvme"]
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: ["us-west-2a", "us-west-2b"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: hdp
+              topologyKey: kubernetes.io/hostname
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: "kubernetes.io/arch"
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[2].operator
+          value: "NotIn"
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].weight
+          value: 80
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+
+  # Test 8: Real-world cloud provider scenario
+  - it: should handle AWS multi-AZ deployment scenario
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: beta.kubernetes.io/instance-type
+                operator: In
+                values: ["m5.xlarge", "m5.2xlarge", "c5.xlarge"]
+              - key: failure-domain.beta.kubernetes.io/zone
+                operator: In
+                values: ["us-east-1a", "us-east-1b", "us-east-1c"]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["hdp"]
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity
+      - contains:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values
+          content: "m5.xlarge"
+      - contains:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[1].values
+          content: "us-east-1a"
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: "failure-domain.beta.kubernetes.io/zone"
+
+  # Test 9: Integration with other features (should work with security contexts, resources, etc.)
+  - it: should render affinity alongside other pod configurations
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.containerSecurityContext.enabled: true
+      hdp.resources.requests.memory: "4Gi"
+      hdp.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64"]
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - exists:
+          path: spec.template.spec.containers[0].securityContext
+      - exists:
+          path: spec.template.spec.containers[0].resources.requests.memory
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: "kubernetes.io/arch"
+
+  # Test 10: Empty affinity object should not render affinity section
+  - it: should not render affinity when affinity is empty object
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.affinity: {}
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - notExists:
+          path: spec.template.spec.affinity

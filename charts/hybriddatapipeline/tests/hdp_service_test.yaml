@@ -1,0 +1,56 @@
+suite: hdp-service
+templates:
+  - hdp-service.yaml
+tests:
+  - it: should render service with correct annotations and type when hdpingressconfiguration.agic.enabled is true
+    set:
+      hdp.ports.hdpServer.port: 8081
+      hdp.ports.hdpServer.targetPort: 8081
+      hdp.hdpingressconfiguration.enabled: true
+      hdp.hdpingressconfiguration.haproxy.enabled: false
+      hdp.hdpingressconfiguration.agic.enabled: true
+    asserts:
+      - isKind:
+          of: Service
+      - isAPIVersion:
+          of: v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hdpserver 
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+      - equal:
+          path: metadata.annotations
+          value:
+            appgw.ingress.kubernetes.io/probe-interval: 5m
+            appgw.ingress.kubernetes.io/probe-path: "true"
+            appgw.ingress.kubernetes.io/probe-protocol: HEAD /api/healthcheck
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports
+          value:
+            - name: hdpserver-port
+              port: 8081
+              protocol: TCP
+              targetPort: 8081
+            - name: internal-api-port
+              port: 8190
+              protocol: TCP
+              targetPort: 8190
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/name: hybriddatapipeline
+            
+  - it: should render service with correct type when hdpingressconfiguration.clusterType is cloud
+    set:
+      hdp.hdpingressconfiguration.clusterType: cloud
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+

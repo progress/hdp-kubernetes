@@ -1,0 +1,296 @@
+suite: PostgreSQL Comprehensive Affinity Configuration Tests
+
+templates:
+  - charts/postgresql/templates/primary/statefulset.yaml
+  - charts/postgresql/templates/read/statefulset.yaml
+
+tests:
+  # ==== PRIMARY TESTS ====
+  
+  # Test 1: PostgreSQL Primary - Default anti-affinity configuration
+  - it: should create default anti-affinity configuration for PostgreSQL primary
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql
+      - exists:
+          path: spec.template.spec.affinity
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution
+
+  # Test 2: PostgreSQL Primary - Hard pod anti-affinity
+  - it: should configure hard pod anti-affinity for PostgreSQL primary
+    set:
+      postgresql.primary.podAntiAffinityPreset: "hard"
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution
+      - notExists:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution
+
+  # Test 3: PostgreSQL Primary - Soft pod affinity
+  - it: should configure soft pod affinity for PostgreSQL primary
+    set:
+      postgresql.primary.podAffinityPreset: "soft"
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - exists:
+          path: spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution
+
+  # Test 4: PostgreSQL Primary - Node affinity configuration
+  - it: should configure node affinity for PostgreSQL primary
+    set:
+      postgresql.primary.nodeAffinityPreset:
+        type: "soft"
+        key: "kubernetes.io/arch"
+        values:
+          - "amd64"
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution
+
+  # Test 5: PostgreSQL Primary - Custom affinity overrides presets
+  - it: should use custom affinity when provided for PostgreSQL primary
+    set:
+      postgresql.primary.podAntiAffinityPreset: "soft"
+      postgresql.primary.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "custom-node-label"
+                    operator: "In"
+                    values: ["custom-value"]
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: "custom-node-label"
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]
+          value: "custom-value"
+
+  # Test 6: PostgreSQL Primary - NodeSelector and Tolerations
+  - it: should configure nodeSelector and tolerations for PostgreSQL primary
+    set:
+      postgresql.primary.nodeSelector:
+        disktype: "ssd"
+        nodepool: "database"
+      postgresql.primary.tolerations:
+        - key: "database"
+          operator: "Equal"
+          value: "postgresql"
+          effect: "NoSchedule"
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector.disktype
+          value: "ssd"
+      - equal:
+          path: spec.template.spec.nodeSelector.nodepool
+          value: "database"
+      - exists:
+          path: spec.template.spec.tolerations
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: "database"
+      - equal:
+          path: spec.template.spec.tolerations[0].effect
+          value: "NoSchedule"
+
+  # ==== READ REPLICA TESTS ====
+
+  # Test 7: PostgreSQL Read Replicas - Default anti-affinity configuration
+  - it: should create default anti-affinity configuration for PostgreSQL read replicas
+    set:
+      postgresql.architecture: "replication"
+      postgresql.readReplicas.replicaCount: 2
+    template: charts/postgresql/templates/read/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql-read
+      - exists:
+          path: spec.template.spec.affinity
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity
+
+  # Test 8: PostgreSQL Read Replicas - Hard pod anti-affinity
+  - it: should configure hard pod anti-affinity for PostgreSQL read replicas
+    set:
+      postgresql.architecture: "replication"
+      postgresql.readReplicas.replicaCount: 2
+      postgresql.readReplicas.podAntiAffinityPreset: "hard"
+    template: charts/postgresql/templates/read/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution
+
+  # Test 9: PostgreSQL Read Replicas - Soft pod affinity
+  - it: should configure soft pod affinity for PostgreSQL read replicas
+    set:
+      postgresql.architecture: "replication"
+      postgresql.readReplicas.replicaCount: 2
+      postgresql.readReplicas.podAffinityPreset: "soft"
+    template: charts/postgresql/templates/read/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - exists:
+          path: spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution
+
+  # Test 10: PostgreSQL Read Replicas - Custom affinity with nodeSelector and tolerations
+  - it: should handle multiple read replicas with custom affinity, nodeSelector and tolerations
+    set:
+      postgresql.architecture: "replication"
+      postgresql.readReplicas.replicaCount: 3
+      postgresql.readReplicas.nodeSelector:
+        storageclass: "fast-ssd"
+        zone: "us-west"
+      postgresql.readReplicas.tolerations:
+        - key: "readonly-workload"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      postgresql.readReplicas.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "workload-type"
+                    operator: "In"
+                    values: ["read-replica"]
+    template: charts/postgresql/templates/read/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.replicas
+          value: 3
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector.storageclass
+          value: "fast-ssd"
+      - equal:
+          path: spec.template.spec.nodeSelector.zone
+          value: "us-west"
+      - exists:
+          path: spec.template.spec.tolerations
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: "readonly-workload"
+      - equal:
+          path: spec.template.spec.tolerations[0].effect
+          value: "NoSchedule"
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: "workload-type"
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]
+          value: "read-replica"
+
+  # Test 11: PostgreSQL Read Replicas - Different affinity from primary
+  - it: should configure different affinity for read replicas than primary
+    set:
+      postgresql.architecture: "replication"
+      postgresql.primary.podAntiAffinityPreset: "soft"
+      postgresql.readReplicas.replicaCount: 2
+      postgresql.readReplicas.podAntiAffinityPreset: "hard"
+      postgresql.readReplicas.podAffinityPreset: "soft"
+    template: charts/postgresql/templates/read/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution
+      - exists:
+          path: spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution
+
+  # Test 12: PostgreSQL Read Replicas - Disabled (should not create StatefulSet)
+  - it: should not create read replica StatefulSet when architecture is standalone
+    set:
+      postgresql.architecture: "standalone"
+    template: charts/postgresql/templates/read/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ==== MIXED ARCHITECTURE TESTS ====
+
+  # Test 13a: PostgreSQL Primary - Different affinity in replication mode
+  - it: should configure hard anti-affinity for primary in replication mode
+    set:
+      postgresql.architecture: "replication"
+      postgresql.primary.podAntiAffinityPreset: "hard"
+      postgresql.primary.nodeSelector:
+        role: "primary-db"
+      postgresql.readReplicas.replicaCount: 2
+      postgresql.readReplicas.podAntiAffinityPreset: "soft"
+      postgresql.readReplicas.nodeSelector:
+        role: "replica-db"
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql-primary
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution
+      - equal:
+          path: spec.template.spec.nodeSelector.role
+          value: "primary-db"
+
+  # Test 13b: PostgreSQL Read Replicas - Different affinity in replication mode
+  - it: should configure soft anti-affinity for read replicas in replication mode
+    set:
+      postgresql.architecture: "replication"
+      postgresql.primary.podAntiAffinityPreset: "hard"
+      postgresql.primary.nodeSelector:
+        role: "primary-db"
+      postgresql.readReplicas.replicaCount: 2
+      postgresql.readReplicas.podAntiAffinityPreset: "soft"
+      postgresql.readReplicas.nodeSelector:
+        role: "replica-db"
+    template: charts/postgresql/templates/read/statefulset.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql-read
+      - exists:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution
+      - equal:
+          path: spec.template.spec.nodeSelector.role
+          value: "replica-db"

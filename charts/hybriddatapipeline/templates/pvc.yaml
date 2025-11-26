@@ -1,9 +1,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.persistence.labels "context" .) | nindent 4 }}
   name: {{ .Release.Name }}-shared-storage-volume
   annotations:
-    "helm.sh/resource-policy": keep
+    {{- $baseAnnotations := dict "helm.sh/resource-policy" "keep" -}}
+    {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.persistence.annotations "baseAnnotations" $baseAnnotations "context" .) | nindent 4 }}
 spec:
   accessModes:
     - ReadWriteMany

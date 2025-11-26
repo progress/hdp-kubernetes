@@ -1,0 +1,268 @@
+# tests/topology_spread_constraints_test.yaml
+
+suite: test postgresql topology spread constraints
+templates:
+  - charts/postgresql/templates/primary/statefulset.yaml
+  - charts/postgresql/templates/read/statefulset.yaml
+
+tests:
+  # ==============================================================================
+  # Test Primary StatefulSet Default Behavior
+  # ==============================================================================
+  - it: should render primary statefulset without topology spread constraints by default
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    set:
+      postgresql:
+        enabled: true
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql
+      - isNull:
+          path: spec.template.spec.topologySpreadConstraints
+
+  # ==============================================================================
+  # Test Primary StatefulSet with Topology Constraints
+  # ==============================================================================
+  - it: should render primary statefulset with topology spread constraints when configured
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    set:
+      postgresql:
+        enabled: true
+        primary:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: "topology.kubernetes.io/zone"
+              whenUnsatisfiable: "DoNotSchedule"
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: postgresql
+                  app.kubernetes.io/component: primary
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql
+      - isNotEmpty:
+          path: spec.template.spec.topologySpreadConstraints
+      - lengthEqual:
+          path: spec.template.spec.topologySpreadConstraints
+          count: 1
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].maxSkew
+          value: 1
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: "topology.kubernetes.io/zone"
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable
+          value: "DoNotSchedule"
+
+  # ==============================================================================
+  # Test Primary StatefulSet with Multiple Topology Constraints
+  # ==============================================================================
+  - it: should render primary statefulset with multiple topology spread constraints
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    set:
+      postgresql:
+        enabled: true
+        primary:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: "topology.kubernetes.io/zone"
+              whenUnsatisfiable: "DoNotSchedule"
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: postgresql
+                  app.kubernetes.io/component: primary
+            - maxSkew: 2
+              topologyKey: "kubernetes.io/hostname"
+              whenUnsatisfiable: "ScheduleAnyway"
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: postgresql
+                  app.kubernetes.io/component: primary
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql
+      - isNotEmpty:
+          path: spec.template.spec.topologySpreadConstraints
+      - lengthEqual:
+          path: spec.template.spec.topologySpreadConstraints
+          count: 2
+      # First constraint
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].maxSkew
+          value: 1
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: "topology.kubernetes.io/zone"
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable
+          value: "DoNotSchedule"
+      # Second constraint
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[1].maxSkew
+          value: 2
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[1].topologyKey
+          value: "kubernetes.io/hostname"
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[1].whenUnsatisfiable
+          value: "ScheduleAnyway"
+
+  # ==============================================================================
+  # Test Read Replicas StatefulSet - Not Rendered by Default
+  # ==============================================================================
+  - it: should not render read replicas statefulset when architecture is standalone
+    template: charts/postgresql/templates/read/statefulset.yaml
+    set:
+      postgresql:
+        enabled: true
+        architecture: standalone
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ==============================================================================
+  # Test Read Replicas StatefulSet Default Behavior
+  # ==============================================================================
+  - it: should render read replicas statefulset without topology spread constraints by default
+    template: charts/postgresql/templates/read/statefulset.yaml
+    set:
+      postgresql:
+        enabled: true
+        architecture: replication
+        readReplicas:
+          replicaCount: 1
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - matchRegex:
+          path: metadata.name
+          pattern: "RELEASE-NAME-postgresql.*read"
+      - isNull:
+          path: spec.template.spec.topologySpreadConstraints
+
+  # ==============================================================================
+  # Test Read Replicas StatefulSet with Topology Constraints
+  # ==============================================================================
+  - it: should render read replicas statefulset with topology spread constraints when configured
+    template: charts/postgresql/templates/read/statefulset.yaml
+    set:
+      postgresql:
+        enabled: true
+        architecture: replication
+        readReplicas:
+          replicaCount: 2
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: "kubernetes.io/hostname"
+              whenUnsatisfiable: "ScheduleAnyway"
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: postgresql
+                  app.kubernetes.io/component: read
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - matchRegex:
+          path: metadata.name
+          pattern: "RELEASE-NAME-postgresql.*read"
+      - isNotEmpty:
+          path: spec.template.spec.topologySpreadConstraints
+      - lengthEqual:
+          path: spec.template.spec.topologySpreadConstraints
+          count: 1
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].maxSkew
+          value: 1
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: "kubernetes.io/hostname"
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable
+          value: "ScheduleAnyway"
+
+  # ==============================================================================
+  # Test Read Replicas StatefulSet with Multiple Constraints
+  # ==============================================================================
+  - it: should render read replicas statefulset with multiple topology spread constraints
+    template: charts/postgresql/templates/read/statefulset.yaml
+    set:
+      postgresql:
+        enabled: true
+        architecture: replication
+        readReplicas:
+          replicaCount: 2
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: "topology.kubernetes.io/zone"
+              whenUnsatisfiable: "DoNotSchedule"
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: postgresql
+                  app.kubernetes.io/component: read
+            - maxSkew: 1
+              topologyKey: "node-type"
+              whenUnsatisfiable: "ScheduleAnyway"
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: postgresql
+                  app.kubernetes.io/component: read
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - matchRegex:
+          path: metadata.name
+          pattern: "RELEASE-NAME-postgresql.*read"
+      - isNotEmpty:
+          path: spec.template.spec.topologySpreadConstraints
+      - lengthEqual:
+          path: spec.template.spec.topologySpreadConstraints
+          count: 2
+      # First constraint
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].maxSkew
+          value: 1
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: "topology.kubernetes.io/zone"
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable
+          value: "DoNotSchedule"
+      # Second constraint
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[1].maxSkew
+          value: 1
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[1].topologyKey
+          value: "node-type"
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[1].whenUnsatisfiable
+          value: "ScheduleAnyway"
+
+  # ==============================================================================
+  # Test Empty Array Behavior
+  # ==============================================================================
+  - it: should not render topology spread constraints when set to empty array for primary
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    set:
+      postgresql:
+        enabled: true
+        primary:
+          topologySpreadConstraints: []
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql
+      - isNull:
+          path: spec.template.spec.topologySpreadConstraints

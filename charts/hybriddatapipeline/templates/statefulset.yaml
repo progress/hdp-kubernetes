@@ -7,6 +7,8 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.labels "context" .) | nindent 8 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.annotations "context" .) | nindent 4 }}
   name: {{ .Release.Name }}-{{ .Values.hdp.services.hdpService.name }}
   namespace: {{ .Release.Namespace }}
 spec:
@@ -15,15 +17,95 @@ spec:
   updateStrategy:
     type: RollingUpdate
   selector:
-    matchLabels:
-      app: hdp-server-app
-  template:
+    matchLabels: {{- include "hybriddatapipeline.selectorLabels" . | nindent 8 }}
+  template: 
     metadata:
       labels:
-        app: hdp-server-app
-        date: "{{ now | unixEpoch }}"
+{{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.podLabels "context" .) | nindent 8 }}
+      annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.podAnnotations "context" .) | nindent 8 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 12321
+        runAsGroup: 12321
+        fsGroup: 12321
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.hdp.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.hdp.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       initContainers:
+      # PostgreSQL Database Initialization - runs at every startup
+      {{- if .Values.hdp.database.postgres.enabled }}
+      - name: postgres-db-init
+        image: {{ .Values.postgresql.image.registry }}/{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}
+        env:
+        - name: PGHOST
+          value: "{{ .Release.Name }}-{{ .Values.hdp.database.postgres.hostName }}{{ if eq .Values.postgresql.architecture "replication" }}-primary{{ end }}"
+        - name: PGPORT
+          value: "{{ .Values.hdp.database.postgres.port }}"
+        - name: PGUSER
+          value: "postgres"
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgresql.global.postgresql.auth.existingSecret }}
+              key: {{ .Values.postgresql.global.postgresql.auth.secretKeys.adminPasswordKey }}
+        - name: PGDATABASE
+          value: {{ .Values.postgresql.global.postgresql.auth.database }}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "=== HDP PostgreSQL Database Initialization - Startup ==="
+          
+          # Wait for PostgreSQL primary to be ready
+          echo "Waiting for PostgreSQL primary..."
+          until pg_isready -h $PGHOST -p $PGPORT -U $PGUSER; do
+            echo "PostgreSQL not ready, waiting..."
+            sleep 5
+          done
+          echo "✅ PostgreSQL primary is ready"
+          
+          # Check if HDP database already exists
+          if psql -h $PGHOST -p $PGPORT -U $PGUSER -lqt | cut -d \| -f 1 | grep -qw {{ .Values.hdp.database.postgres.databaseName }}; then
+            echo "✅ HDP database already exists, skipping initialization"
+            exit 0
+          fi
+          
+          echo "🔧 Executing HDP database initialization script..."
+          # Execute the initialization script
+          bash /postgres-init/init.sh
+          echo "✅ HDP database initialization completed successfully"
+          
+        volumeMounts:
+        - name: postgres-init-scripts
+          mountPath: /postgres-init
+          readOnly: true
+        securityContext:
+          runAsNonRoot: {{.Values.hdp.containerSecurityContext.runAsNonRoot }}
+          runAsUser: 12321
+          runAsGroup: 12321
+          readOnlyRootFilesystem: {{.Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      {{- end }}
       - name: init-properties
         image: "{{.Values.hdp.image.repository}}:{{.Values.hdp.image.tag}}"
         imagePullPolicy: {{.Values.hdp.image.pullPolicy}}
@@ -32,25 +114,55 @@ spec:
           readOnlyRootFilesystem: {{.Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
           runAsNonRoot: {{.Values.hdp.containerSecurityContext.runAsNonRoot }}
           runAsUser: 12321
-          runAsGroup: 100
+          runAsGroup: 12321
           capabilities:
             drop:
               - ALL
           seccompProfile:
             type: RuntimeDefault
-        {{- if .Values.hdpingressconfiguration.tls.enabled }}
-        {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
-        command: ["/bin/sh", "-c", "cp -Rv /home/hdpuser/Progress /app; mkdir -p /hdpshare && cp /hdpprops/*.properties /hdpshare/ && echo \'Config Map mounted and properties file copied to /hdpshare!\'; cat /certs/tls.crt /certs/tls.key > /hdpshare/hdp-cert.pem && echo \'Certificate copied to /hdpshare!\'"]
-        {{- else }}
-        command: ["/bin/sh", "-c", "mkdir -p /hdpshare && cp /hdpprops/*.properties /hdpshare/ && echo \'Config Map mounted and properties file copied to /hdpshare!\'; cat /certs/tls.crt /certs/tls.key > /hdpshare/hdp-cert.pem && echo \'Certificate copied to /hdpshare!\'"]
-        {{- end }}
-        {{- else }}
-        {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
-        command: ["/bin/sh", "-c", "cp -Rv /home/hdpuser/Progress /app; mkdir -p /hdpshare && cp /hdpprops/*.properties /hdpshare/ && echo \'Config Map mounted and properties file copied to /hdpshare!\'"]
-        {{- else }}
-          command: ["/bin/sh", "-c", "mkdir -p /hdpshare && cp /hdpprops/*.properties /hdpshare/ && echo \'Config Map mounted and properties file copied to /hdpshare!\'"]
-        {{- end }}
-        {{- end }}
+        command:
+          - "/bin/sh"
+          - "-c"
+          - |
+            {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+            # Copy user files to app directory
+            cp -Rv /home/hdpuser/* /app
+            {{- end }}
+            
+            # Create shared directory and copy properties
+            mkdir -p /hdpshare
+            cp /hdpprops/*.properties /hdpshare/
+            echo 'Config Map mounted and properties file copied to /hdpshare!'
+            
+            {{- if .Values.hdp.hdpingressconfiguration.tls.enabled }}
+            # Copy TLS certificates
+            cat /certs/tls.crt /certs/tls.key > /hdpshare/hdp-cert.pem
+            echo 'Certificate copied to /hdpshare!'
+            {{- end }}
+            
+            # Detect Java installation
+            {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+            SEARCH_PATH="/app"
+            {{- else }}
+            SEARCH_PATH="/home/hdpuser"
+            {{- end }}
+            
+            JAVA_EXECUTABLE=$(find $SEARCH_PATH -name 'java' -type f -path '*/bin/java' 2>/dev/null | head -1)
+            if [ -n "$JAVA_EXECUTABLE" ] && [ -x "$JAVA_EXECUTABLE" ]; then
+              JAVA_HOME_PATH=$(dirname $(dirname $JAVA_EXECUTABLE))
+              echo "$JAVA_HOME_PATH" > /hdpshare/java_home.txt
+              echo "JRE detected at: $JAVA_HOME_PATH (executable: $JAVA_EXECUTABLE)"
+            else
+              echo "" > /hdpshare/java_home.txt
+              echo "No valid Java executable found in $SEARCH_PATH"
+            fi
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
         volumeMounts:
         {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
         - name: hdp-app
@@ -58,7 +170,7 @@ spec:
         {{- end }}  
         - name: properties
           mountPath: /hdpprops
-        {{- if .Values.hdpingressconfiguration.tls.enabled }}
+        {{- if .Values.hdp.hdpingressconfiguration.tls.enabled }}
         - name: certs
           mountPath: /certs
         {{- end }}  
@@ -73,15 +185,30 @@ spec:
             readOnlyRootFilesystem: {{.Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
             runAsNonRoot: {{.Values.hdp.containerSecurityContext.runAsNonRoot }}
             runAsUser: 12321
-            runAsGroup: 100
+            runAsGroup: 12321
             capabilities:
                 drop:   
                  - ALL    
             seccompProfile:
               type: RuntimeDefault
-          {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
-          command: ["/bin/sh", "-c", "${HDP_INSTALL_HOME}/Progress/DataDirect/scripts/startup.sh"]
-          {{- end }}
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              # Set Java Home if detected
+              if [ -f /hdpshare/java_home.txt ]; then
+                export HDP_JAVA_HOME=$(cat /hdpshare/java_home.txt)
+                echo "Using JRE at: $HDP_JAVA_HOME"
+                # Clean up the temporary file after use
+                rm -f /hdpshare/java_home.txt
+              fi
+              
+              # Start HDP server
+              {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
+              ${HDP_INSTALL_HOME}/Progress/DataDirect/scripts/startup.sh
+              {{- else }}
+              /home/hdpuser/Progress/DataDirect/scripts/startup.sh
+              {{- end }}
           ports:
             - name: hdpserver
               containerPort: {{.Values.hdp.ports.hdpServer.port}}
@@ -191,6 +318,13 @@ spec:
               memory: {{ $limMem | quote }}
               cpu: {{ $limCpu | quote }}       
       volumes:
+        # PostgreSQL initialization scripts (available to main container)
+        {{- if .Values.hdp.database.postgres.enabled }}
+        - name: postgres-init-scripts
+          secret:
+            secretName: {{ include "hybriddatapipeline.fullname" . }}-postgres-init
+            defaultMode: 0755
+        {{- end }}
         {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
         - name: hdp-app
           emptyDir: {}
@@ -218,10 +352,10 @@ spec:
               - configMap:
                   name: {{ .Release.Name }}-logging-properties-configmap
               {{- end }}
-        {{- if .Values.hdpingressconfiguration.tls.enabled }}
+        {{- if .Values.hdp.hdpingressconfiguration.tls.enabled }}
         - name: certs
           secret:
-            secretName: {{ .Values.hdpingressconfiguration.tls.secretName }}
+            secretName: {{ .Values.hdp.hdpingressconfiguration.tls.secretName }}
         {{- end }}
       {{- if .Values.hdp.imagePullSecrets }}
       imagePullSecrets: 

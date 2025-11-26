@@ -1,4 +1,4 @@
-{{- if or .Values.hdpingressconfiguration.agic.enabled .Values.hdpingressconfiguration.haproxy.enabled }}
+{{- if or .Values.hdp.hdpingressconfiguration.agic.enabled .Values.hdp.hdpingressconfiguration.haproxy.enabled }}
 
 Hybrid Data Pipeline is now accessible through the following URL:
 

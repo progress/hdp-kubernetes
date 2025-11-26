@@ -1,0 +1,168 @@
+suite: PostgreSQL PodDisruptionBudget Configuration Tests
+templates:
+  - charts/postgresql/templates/primary/pdb.yaml
+tests:
+  - it: should not create PostgreSQL PDB when disabled
+    set:
+      postgresql.primary.pdb.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create PostgreSQL PDB when enabled
+    set:
+      postgresql.primary.pdb.create: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgresql
+
+  - it: should use minAvailable when configured
+    set:
+      postgresql.primary.pdb.create: true
+      postgresql.primary.pdb.minAvailable: 1
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - notExists:
+          path: spec.maxUnavailable
+
+  - it: should use maxUnavailable when configured
+    set:
+      postgresql.primary.pdb.create: true
+      postgresql.primary.pdb.maxUnavailable: 1
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+
+  - it: should support percentage values for minAvailable
+    set:
+      postgresql.primary.pdb.create: true
+      postgresql.primary.pdb.minAvailable: "50%"
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.minAvailable
+          value: "50%"
+
+  - it: should support percentage values for maxUnavailable
+    set:
+      postgresql.primary.pdb.create: true
+      postgresql.primary.pdb.maxUnavailable: "30%"
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.maxUnavailable
+          value: "30%"
+
+  - it: should have correct selector for PostgreSQL primary
+    set:
+      postgresql.primary.pdb.create: true
+      postgresql.primary.pdb.minAvailable: 1
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: postgresql
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: primary
+
+  - it: should have correct API version and kind
+    set:
+      postgresql.primary.pdb.create: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: apiVersion
+          value: "policy/v1beta1"
+      - equal:
+          path: kind
+          value: "PodDisruptionBudget"
+
+---
+suite: PostgreSQL Read Replicas PodDisruptionBudget Tests
+templates:
+  - charts/postgresql/templates/read/pdb.yaml
+tests:
+  - it: should not create read replicas PDB when disabled
+    set:
+      postgresql.architecture: replication
+      postgresql.readReplicas.pdb.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create read replicas PDB when architecture is replication
+    set:
+      postgresql.architecture: replication
+      postgresql.readReplicas.pdb.create: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PodDisruptionBudget
+
+  - it: should use minAvailable for read replicas when configured
+    set:
+      postgresql.architecture: replication
+      postgresql.readReplicas.pdb.create: true
+      postgresql.readReplicas.pdb.minAvailable: 2
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 2
+      - notExists:
+          path: spec.maxUnavailable
+
+  - it: should use maxUnavailable for read replicas when configured
+    set:
+      postgresql.architecture: replication
+      postgresql.readReplicas.pdb.create: true
+      postgresql.readReplicas.pdb.maxUnavailable: 1
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+
+  - it: should have correct selector for read replicas with component read
+    set:
+      postgresql.architecture: replication
+      postgresql.readReplicas.pdb.create: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: read
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: postgresql
+
+  - it: should have replica architecture for read-only workload
+    set:
+      postgresql.architecture: replication
+      postgresql.readReplicas.pdb.create: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: read
+      - notEqual:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: primary

@@ -1,17 +1,19 @@
-{{- if (.Values.hdp.database.postgres.enabled) }}
-# Creates the initial script to setup the PostgresSQL Database for HDP as an external Account Database
+{{- if .Values.hdp.database.postgres.enabled }}
+# Creates the initial script to setup the PostgreSQL Database for HDP as an external Account Database
 # Expects the secrets to be created prior to setup this secret 
 apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ .Values.postgresql.primary.initdb.scriptsSecret}}
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.secretLabels "context" .) | nindent 4 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.secretAnnotations "context" .) | nindent 4 }}
+  name: {{ include "hybriddatapipeline.fullname" . }}-postgres-init
 stringData:
   init.sh: |-
     set -e
-    export PGPASSWORD='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "account-database-secrets" "key" "privileged-postgres-password" "context" $) | trim }}'
-    PGUSER='postgres'
-    PGDBNAME='{{ .Values.postgresql.global.postgresql.auth.database }}'
-
+    echo "Using PostgreSQL connection: $PGHOST:$PGPORT"
+    echo "PGPASSWORD is set: $([ -n "$PGPASSWORD" ] && echo "yes" || echo "no")"
+    
+    # Database configuration
     HDP_PG_DB_NAME={{.Values.hdp.database.postgres.databaseName}}
     HDP_PG_DB_SCHEMA_NAME={{.Values.hdp.database.postgres.schemaName}}
 
@@ -20,12 +22,12 @@ stringData:
     HDP_USER_PG_USERNAME='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "hdp-secrets" "key" "account-database-user-username" "context" $) | trim }}'
     HDP_USER_PG_USERPWD='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "hdp-secrets" "key" "account-database-user-password" "context" $) | trim }}'
 
-    psql -v ON_ERROR_STOP=1 --username $PGUSER --dbname $PGDBNAME <<-EOSQL
+    psql -v ON_ERROR_STOP=1 --host $PGHOST --port $PGPORT --username $PGUSER --dbname $PGDATABASE <<-EOSQL
       create database $HDP_PG_DB_NAME;
       create user $HDP_ADMIN_PG_USERNAME with PASSWORD '$HDP_ADMIN_PG_USERPWD';
       create user $HDP_USER_PG_USERNAME with PASSWORD '$HDP_USER_PG_USERPWD';
     EOSQL
-    psql -v ON_ERROR_STOP=1 --username $PGUSER --dbname $HDP_PG_DB_NAME <<-EOSQL
+    psql -v ON_ERROR_STOP=1 --host $PGHOST --port $PGPORT --username $PGUSER --dbname $HDP_PG_DB_NAME <<-EOSQL
       create schema $HDP_PG_DB_SCHEMA_NAME authorization $HDP_ADMIN_PG_USERNAME;
       create extension citext with schema $HDP_PG_DB_SCHEMA_NAME;
       grant usage on schema $HDP_PG_DB_SCHEMA_NAME to $HDP_USER_PG_USERNAME;

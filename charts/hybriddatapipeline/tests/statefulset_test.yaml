@@ -115,8 +115,108 @@ tests:
           path: spec.template.spec.containers[0].resources.limits.cpu
           value: "500m"
       - equal:
-          path: spec.template.spec.volumes[5].projected.sources[0].configMap.name
+          path: spec.template.spec.volumes[6].projected.sources[0].configMap.name
           value: "RELEASE-NAME-configmap"
       - equal:
-          path: spec.template.spec.volumes[5].projected.sources[1].configMap.name
+          path: spec.template.spec.volumes[6].projected.sources[1].configMap.name
           value: "RELEASE-NAME-logging-properties-configmap"
+
+  # Test StatefulSet with PostgreSQL replication enabled
+  - it: should render the statefulset correctly with postgresql replication configuration
+    set:
+      hdp.services.hdpService.name: "hdp-service"
+      hdp.eula.accepted: "true"
+      hdp.replicaCount: 2
+      hdp.database.postgres.enabled: true
+      hdp.database.postgres.hostName: postgresql
+      postgresql.architecture: replication
+      postgresql.auth.existingSecret: "account-database-secrets"
+      postgresql.auth.replicationUsername: repl_user
+      postgresql.readReplicas.replicaCount: 2
+      hdp.image.repository: "my-repo"
+      hdp.image.tag: "latest"
+      hdp.configurationFileName: "config.properties"
+      haproxy.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: "RELEASE-NAME-hdp-service"
+      - equal:
+          path: spec.replicas
+          value: 2
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "my-repo:latest"
+      - equal:
+          path: spec.template.spec.volumes[6].projected.sources[0].configMap.name
+          value: "RELEASE-NAME-configmap"
+
+  # Test StatefulSet with PostgreSQL standalone configuration (default)
+  - it: should render the statefulset correctly with postgresql standalone configuration
+    set:
+      hdp.services.hdpService.name: "hdp-service"
+      hdp.eula.accepted: "true"
+      hdp.replicaCount: 1
+      hdp.database.postgres.enabled: true
+      hdp.database.postgres.hostName: postgresql
+      postgresql.architecture: standalone
+      hdp.image.repository: "my-repo"
+      hdp.image.tag: "latest"
+      hdp.configurationFileName: "config.properties"
+      haproxy.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: "RELEASE-NAME-hdp-service"
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "my-repo:latest"
+      - equal:
+          path: spec.template.spec.volumes[6].projected.sources[0].configMap.name
+          value: "RELEASE-NAME-configmap"
+
+  - it: should render postgres-db-init container when PostgreSQL is enabled
+    set:
+      hdp.database.postgres.enabled: true
+      hdp.eula.accepted: "true"
+      postgresql.architecture: replication
+      hdp.database.postgres.hostName: "postgresql"
+      hdp.database.postgres.port: "5432"
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: "postgres-db-init"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[0].name
+          value: "PGHOST"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[0].value
+          value: "RELEASE-NAME-postgresql-primary"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[1].name
+          value: "PGPORT"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[1].value
+          value: "5432"
+      - equal:
+          path: spec.template.spec.initContainers[0].volumeMounts[0].name
+          value: "postgres-init-scripts"
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: "postgres-init-scripts"
+
+  - it: should not render postgres-db-init when PostgreSQL is disabled
+    set:
+      hdp.database.postgres.enabled: false
+      hdp.eula.accepted: "true"
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: "init-properties"

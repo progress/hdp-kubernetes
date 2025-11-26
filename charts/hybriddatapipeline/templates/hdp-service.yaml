@@ -1,22 +1,14 @@
 apiVersion: v1
 kind: Service
 metadata:
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.services.labels "context" .) | nindent 4 }}
   annotations:
-    {{- if .Values.hdpingressconfiguration.haproxy.enabled }}
-    haproxy.org/affinity: "cookie"
-    haproxy.org/cookie-persistence: HDP-SESSION
-    haproxy.org/check: "{{ .Values.hdp.services.hdpService.check }}"
-    haproxy.org/check-http: HEAD {{ .Values.hdp.services.hdpService.checkPath }}
-    haproxy.org/check-interval: {{ .Values.hdp.services.hdpService.checkInterval }}
-    {{- else if .Values.hdpingressconfiguration.agic.enabled }}
-    appgw.ingress.kubernetes.io/probe-path: "{{ .Values.hdp.services.hdpService.check }}"
-    appgw.ingress.kubernetes.io/probe-protocol: HEAD {{ .Values.hdp.services.hdpService.checkPath }}
-    appgw.ingress.kubernetes.io/probe-interval: {{ .Values.hdp.services.hdpService.checkInterval }}
-    {{- end }}
+    {{- $baseAnnotations := include "hdp.service.baseAnnotations" . -}}
+    {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.services.annotations "baseAnnotations" $baseAnnotations "context" .) | nindent 4 }}
   name: {{ .Release.Name }}-{{ .Values.hdp.services.hdpService.name }}
   namespace: {{ .Release.Namespace }}
 spec:
-  {{- if eq .Values.hdpingressconfiguration.clusterType "cloud" }}
+  {{- if eq .Values.hdp.hdpingressconfiguration.clusterType "cloud" }}
   type: ClusterIP
   {{ else }}
   type: NodePort
@@ -30,5 +22,4 @@ spec:
     port: 8190
     protocol: TCP
     targetPort: 8190
-  selector:
-    app: hdp-server-app
+  selector: {{- include "hybriddatapipeline.selectorLabels" . | nindent 8 }}

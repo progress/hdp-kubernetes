@@ -1,0 +1,72 @@
+suite: configmap
+templates:
+  - configmap.yaml
+tests:
+  # Test PostgreSQL standalone configuration
+  - it: should render configmap with standalone database hostname when postgresql.architecture is standalone
+    set:
+      hdp.database.postgres.enabled: true
+      hdp.database.postgres.hostName: postgresql
+      postgresql.architecture: standalone
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - isAPIVersion:
+          of: v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-configmap
+      - matchRegex:
+          path: data["hdpdeploy.properties"]
+          pattern: "HDP_DATABASE_HOSTNAME=RELEASE-NAME-postgresql"
+
+  # Test PostgreSQL replication configuration
+  - it: should render configmap with primary database hostname when postgresql.architecture is replication
+    set:
+      hdp.database.postgres.enabled: true
+      hdp.database.postgres.hostName: postgresql
+      postgresql.architecture: replication
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - isAPIVersion:
+          of: v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-configmap
+      - matchRegex:
+          path: data["hdpdeploy.properties"]
+          pattern: "HDP_DATABASE_HOSTNAME=RELEASE-NAME-postgresql-primary"
+
+  # Test when PostgreSQL is disabled
+  - it: should render configmap with empty database hostname when postgresql is disabled
+    set:
+      hdp.database.postgres.enabled: false
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - isAPIVersion:
+          of: v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-configmap
+      - matchRegex:
+          path: data["hdpdeploy.properties"]
+          pattern: "HDP_DATABASE_HOSTNAME=\n"
+
+  # Test default standalone behavior (backward compatibility)
+  - it: should render configmap with standalone hostname when postgresql.architecture is not set
+    set:
+      hdp.database.postgres.enabled: true
+      hdp.database.postgres.hostName: postgresql
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - isAPIVersion:
+          of: v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-configmap
+      - matchRegex:
+          path: data["hdpdeploy.properties"]
+          pattern: "HDP_DATABASE_HOSTNAME=RELEASE-NAME-postgresql"

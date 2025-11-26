@@ -1,6 +1,7 @@
-suite: opa-service
+# tests/unittest_notification_service.yaml
+suite: notification-service
 templates:
-  - opa-service.yaml
+  - notification-service.yaml
 
 tests:
   - it: should render the service with ClusterIP and annotations when hdpingressconfiguration.agic.enabled is true
@@ -8,20 +9,19 @@ tests:
       hdp.hdpingressconfiguration.enabled: true
       hdp.hdpingressconfiguration.haproxy.enabled: false
       hdp.hdpingressconfiguration.agic.enabled: true
-      hdp.services.opAccessorService.check: true
-      hdp.services.opAccessorService.checkPath: /healthz
-      hdp.services.opAccessorService.checkInterval: 10s
-      hdp.services.opAccessorService.aclPath: /opa
-      hdp.services.opAccessorService.name: opaccessor
-      hdp.ports.opAccessor.port: 8080
-      hdp.ports.opAccessor.targetPort: 8080
-      hdp.replicaCount: 1
+      hdp.services.notificationService.check: true
+      hdp.services.notificationService.checkPath: /healthz
+      hdp.services.notificationService.checkInterval: 10s
+      hdp.services.notificationService.aclPath: /notify
+      hdp.services.notificationService.name: notification
+      hdp.ports.notificationServer.port: 8080
+      hdp.ports.notificationServer.targetPort: 8080
     asserts:
       - isKind:
           of: Service
       - equal:
           path: metadata.name
-          value: "RELEASE-NAME-opaccessor-0"
+          value: "RELEASE-NAME-notification"
       - equal:
           path: spec.type
           value: "ClusterIP"
@@ -39,4 +39,5 @@ tests:
           value: "PathBasedRouting"
       - equal:
           path: metadata.annotations["appgw.ingress.kubernetes.io/backend-path-prefix"]
-          value: "/opa_RELEASE-NAME-hdpserver-0"
+          value: "/notify"
+

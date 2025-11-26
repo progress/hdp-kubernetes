@@ -4,29 +4,19 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.hdpingressconfiguration.labels "context" .) | nindent 4 }}
   annotations:
-    {{- if .Values.hdpingressconfiguration.haproxy.enabled }}
-    haproxy.org/forwarded-for: "true"
-    haproxy.org/load-balance: roundrobin
-    haproxy.org/timeout-check: {{ .Values.hdpingressconfiguration.timeout | default 300 | quote }}
-    haproxy.org/timeout-server: {{ .Values.hdpingressconfiguration.timeout | default 300 | quote }}
-    {{- else if .Values.hdpingressconfiguration.agic.enabled }}
-    appgw.ingress.kubernetes.io/cookie-based-affinity: "true"
-    appgw.ingress.kubernetes.io/session-affinity-cookie-name: "HDP-SESSION"
-    appgw.ingress.kubernetes.io/request-timeout: {{ .Values.hdpingressconfiguration.timeout | default 300 | quote }}
-    {{- if .Values.hdpingressconfiguration.tls.enabled }}
-    appgw.ingress.kubernetes.io/ssl-redirect: "true"
-    {{- end }}
-    {{- end }}
-  name: {{ .Release.Name }}-{{ .Values.hdpingressconfiguration.ingressName }}
+    {{- $baseAnnotations := include "hdp.ingress.baseAnnotations" . -}}
+    {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.hdpingressconfiguration.annotations "baseAnnotations" $baseAnnotations "context" .) | nindent 4 }}
+  name: {{ .Release.Name }}-{{ .Values.hdp.hdpingressconfiguration.ingressName }}
   namespace: {{ .Release.Namespace }}
 spec:
-  {{- if .Values.hdpingressconfiguration.haproxy.enabled }}
-  ingressClassName: {{ .Values.haproxyingress.controller.ingressClass }}
-  {{- else if .Values.hdpingressconfiguration.agic.enabled }}
-  ingressClassName: {{ .Values.hdpingressconfiguration.agic.ingressClass }}
+  {{- if .Values.hdp.hdpingressconfiguration.haproxy.enabled }}
+  ingressClassName: {{ .Values.hdp.hdpingressconfiguration.haproxy.ingressClass }}
+  {{- else if .Values.hdp.hdpingressconfiguration.agic.enabled }}
+  ingressClassName: {{ .Values.hdp.hdpingressconfiguration.agic.ingressClass }}
   {{- end }}
-  {{- if eq .Values.hdpingressconfiguration.clusterType "cloud" }}
+  {{- if eq .Values.hdp.hdpingressconfiguration.clusterType "cloud" }}
   {{- end }}
   rules:
   - host: {{ .Values.hdp.loadbalancer.hostName }}
@@ -58,10 +48,10 @@ spec:
         pathType: Prefix
         {{- end }}
         {{- end }}
-  {{- if .Values.hdpingressconfiguration.tls.enabled }}
+  {{- if .Values.hdp.hdpingressconfiguration.tls.enabled }}
   tls:
   - hosts:
     - {{ .Values.hdp.loadbalancer.hostName }}
-    secretName: {{ .Values.hdpingressconfiguration.tls.secretName }}
+    secretName: {{ .Values.hdp.hdpingressconfiguration.tls.secretName }}
   {{- end }} 
 

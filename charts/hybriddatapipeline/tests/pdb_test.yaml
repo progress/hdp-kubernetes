@@ -1,0 +1,79 @@
+﻿suite: PodDisruptionBudget Template Tests
+templates:
+  - templates/pdb.yaml
+tests:
+  - it: should not create PDB when disabled
+    set:
+      hdp.pdb.create: false
+      hdp.replicaCount: 3
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should not create PDB with single replica
+    set:
+      hdp.pdb.create: true
+      hdp.replicaCount: 1
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create PDB when create
+    set:
+      hdp.pdb.create: true
+      hdp.replicaCount: 3
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PodDisruptionBudget
+
+  - it: should use minAvailable when set
+    set:
+      hdp.pdb.create: true
+      hdp.pdb.minAvailable: 2
+      hdp.replicaCount: 3
+      postgresql.enabled: false
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 2
+
+  - it: should use maxUnavailable when set
+    set:
+      hdp.pdb.create: true
+      hdp.pdb.minAvailable: ""
+      hdp.pdb.maxUnavailable: 1
+      hdp.replicaCount: 3
+      postgresql.enabled: false
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+
+  - it: should apply smart defaults for 2 replicas
+    set:
+      hdp.pdb.create: true
+      hdp.pdb.minAvailable: ""
+      hdp.pdb.maxUnavailable: ""
+      hdp.replicaCount: 2
+      postgresql.enabled: false
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 1
+
+  - it: should apply smart defaults for multiple replicas
+    set:
+      hdp.pdb.create: true
+      hdp.pdb.minAvailable: ""
+      hdp.pdb.maxUnavailable: ""
+      hdp.replicaCount: 4
+      postgresql.enabled: false
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1

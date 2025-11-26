@@ -13,6 +13,37 @@ hdp:
   ## @note Failure to accept the EULA may result in deployment failure.
   eula:
     accepted: false  # Indicates explicit acceptance of the EULA. Set to true to proceed. Review the EULA before accepting.
+  ## @param commonLabels Add labels to all the hdp deployed resources
+  ##
+  commonLabels: {}
+  ## @param commonAnnotations Add annotations to all the hdp deployed resources
+  ##
+  commonAnnotations: {}
+  ## @param hdp.labels Map of labels to add to the hdp statefulset
+  ##
+  labels: {}
+  ## @param hdp.annotations Map of annotations to add to the hdp statefulset
+  ##
+  annotations: {}
+  ## @param hdp.podLabels Map of labels to add to the hdp pods
+  ##
+  podLabels: {}
+  ## @param hdp.podAnnotations Map of annotations to add to the hdp pods
+  ##
+  podAnnotations: {}
+  ## @param hdp.configLabels Map of labels to add to the hdp configuration Map
+  ##
+  configLabels: {}  
+  ## @param hdp.configAnnotations Map of annotations to add to the hdp configuration Map
+  ##
+  configAnnotations: {} 
+  ## @param hdp.secretLabels Map of labels to add to the hdp secrets
+  ##  
+  secretLabels: {}
+  ## @param hdp.secretAnnotations Map of annotations to add to the hdp secrets
+  ##  
+  secretAnnotations: {}
+  
   ## @param hdp.replicaCount The number of HDP server nodes to be deployed
   ##
   replicaCount: 2
@@ -30,7 +61,7 @@ hdp:
   ##   - myRegistryKeySecretName
   ##
   imagePullSecrets: []
-  ## @param hdp.loadbalancer.hostName The name of the DNS record set used for external access to the HDP server
+  ## @param hdp.loadbalancer.hostName The FQDN used for external access to Hybrid Data Pipeline
   ##
   loadbalancer:
     hostName: 
@@ -65,6 +96,7 @@ hdp:
       targetPort: 11280
   ## @param hdp.database.postgres.enabled The configuration for enabling the deployment of a PostgreSQL system database
   ## @param hdp.database.postgres.hostName The hostname of the PostgreSQL database
+  ## @note The value of the hdp.database.postgres.hostName parameter must match the value of the postgresql.nameOverride parameter  
   ## @param hdp.database.postgres.port The port number of the PostgreSQL database
   ## @param hdp.database.postgres.schemaName The name of the system database schema in the PostgreSQL database
   ## @param hdp.database.postgres.databaseName The name of the PostgreSQL database
@@ -79,15 +111,18 @@ hdp:
       databaseName: hdp
       advancedOptions: 
   ## @param hdp.persistence.keystore.mountPath The directory path within the container where the persistent volume will be mounted
+  ## @note This value is not configurable and must not be changed
   ## @param hdp.persistence.keystore.size The size of the persistent volume to be requested
   ## @param hdp.persistence.keystore.storageClassName The name of the StorageClass to be used for the persistent volume
   ## @param hdp.persistence.logs.enabled The parameter for enabling persistent storage for logs
   ## @param hdp.persistence.logs.mountPath The directory path within the container where the persistent volume for logs will be mounted
   ## @param hdp.persistence.logs.size The size of the persistent volume to be requested for logs
   ## @param hdp.persistence.logs.storageClassName The name of the StorageClass to be used for the persistent volume for logs
+  ## @param hdp.persistence.labels Additional lables to be added to the  persistent volume
+  ## @param hdp.persistence.annotations Additional Annotations for the persistent volume
   persistence:
     keystore:
-      mountPath: /hdpshare
+      mountPath: /hdpshare # This value is not configurable and must not be changed
       size: 1Gi
       storageClassName: 
     logs:
@@ -95,6 +130,8 @@ hdp:
       mountPath: /logs
       size: 1Gi
       storageClassName: 
+    labels: {}
+    annotations: {}
   ## @param hdp.containerSecurityContext.readOnlyRootFilesystem The parameter for setting the root filesystem as read-only
   ## @param hdp.containerSecurityContext.runAsNonRoot The parameter for running the container as a non-root user
   ##
@@ -157,6 +194,22 @@ hdp:
     timeoutSeconds: 30
     failureThreshold: 3
     successThreshold: 1
+  ## @section Pod Scheduling Configuration
+  ## @param hdp.affinity Kubernetes affinity configuration for controlling pod placement
+  ## @note Supports complete Kubernetes affinity specification including node affinity, pod affinity, and anti-affinity
+  ## @note Refer to: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
+  ## @note This provides maximum flexibility and follows industry standards used by major charts (MarkLogic, etc.)
+
+  affinity: {}
+  
+  ## @section Topology Spread Constraints Configuration  
+  ## @param hdp.topologySpreadConstraints Kubernetes topology spread constraints for controlling pod distribution
+  ## @note Controls how pods are distributed across zones, regions, nodes, or other topology domains in Azure AKS
+  ## @note Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/
+  ## @note Works together with affinity to provide complete pod scheduling control
+  
+  topologySpreadConstraints: []
+  
   ## @param hdp.services.hdpService.name The name of the Hybrid Data Pipeline service
   ## @param hdp.services.hdpService.check The parameter for enabling a health check against the server
   ## @param hdp.services.hdpService.checkInterval The frequency of the health check
@@ -171,6 +224,8 @@ hdp:
   ## @param hdp.services.notificationService.checkInterval The frequency of the health check
   ## @param hdp.services.notificationService.checkPath The check path for the Notification Server service
   ## @param hdp.services.notificationService.aclPath The ACL path for the Notification Server service
+  ## @param hdp.services.labels  Additional labels to be added to the hdp services
+  ## @param hdp.services.annotations  Additional annotations to be added to the hdp services
   ##
   services:
     hdpService:
@@ -190,46 +245,205 @@ hdp:
       checkInterval: 5m
       checkPath: /
       aclPath: /connect/X_DataDirect_Notification_Server
+    labels: {}
+    annotations: {}
 
-## @section hdpingressconfiguration The parameters for configuring the Ingress for the HDP server
-##
-hdpingressconfiguration:
-  ## @param hdpingressconfiguration.enabled The parameter for enabling ingress to the HDP server
-  ## @param hdpingressconfiguration.ingressName The name of the ingress resource that will be created and managed
-  ## @param hdpingressconfiguration.agic.enabled The parameter for enabling Azure Application Gateway Ingress (AGIC ingress)
-  ## @param hdpingressconfiguration.agic.ingressClass The ingress class to be used by the Azure Application Gateway Ingress Controller (AGIC)
-  ## @param hdpingressconfiguration.haproxy.enabled The parameter for enabling HAProxy ingress (not yet supported)
-  ## @param hdpingressconfiguration.clusterType The type of cluster on which the HDP server is deployed (on-premises deployments are not yet supported)
-  ## @note "cloud" and "onpremise" are valid values (on-premises deployments are not yet supported)
-  ## @param hdpingressconfiguration.timeout The timeout in seconds for the ingress controller or load balancer to respond to requests
-  ## @param hdpingressconfiguration.tls.enabled The parameter for enabling TLS communication with the HDP server
-  ## @param hdpingressconfiguration.tls.secretName The name of the Kubernetes Secret that contains the TLS certificate and private key
-  ## @note The PEM-formatted SSL certificate and private key must be used to create a Kubernetes secret
-  ## @example: kubectl create secret tls tls-cert --cert=mycert.pem --key=privkey.pem
-  ## @note The name of the secret must be specified with the secretName parameter
+  ## @param hdp.pdb.enabled The parameter for enabling PodDisruptionBudget for the HDP server
+  ## @param hdp.pdb.minAvailable The minimum number or percentage of pods that must remain available during voluntary disruptions
+  ## @param hdp.pdb.maxUnavailable The maximum number or percentage of pods that can be unavailable during voluntary disruptions
+  ## @param hdp.pdb.annotations Additional annotations to be added to the PodDisruptionBudget resource
+  ## @param hdp.pdb.labels Additional labels to be added to the PodDisruptionBudget resource
+  ## @note Use either minAvailable OR maxUnavailable, not both
+  ## @note pdb is only effective when replicaCount > 1
+  ## @note If neither minAvailable nor maxUnavailable is specified, smart defaults will be applied based on replicaCount
   ##
-  enabled: true
-  ingressName: "hdp-ingress"
-  agic:
-    enabled: true  
-    ingressClass: "azure-application-gateway"
-  haproxy:
-    enabled: false # HAProxy ingress is not yet supported
-  clusterType: "cloud" # On-premises deployments are not yet supported
-  timeout: 300
-  tls:
-    enabled: false
-    secretName: ""
+  pdb:
+    create: true
+    # Examples:
+    # minAvailable: 1
+    # minAvailable: "50%"
+    minAvailable: "1"
+    # Examples:
+    # maxUnavailable: 1
+    # maxUnavailable: "25%"
+    maxUnavailable: ""
+    annotations: {}
+    labels: {}
+
+  ## @section hdpingressconfiguration The parameters for configuring the Ingress for the HDP server
+  ##
+  hdpingressconfiguration:
+    ## @param hdp.hdpingressconfiguration.enabled The parameter for enabling ingress to the HDP server
+    ## @param hdp.hdpingressconfiguration.ingressName The name of the ingress resource that will be created and managed
+    ## @param hdp.hdpingressconfiguration.agic.enabled The parameter for enabling Azure Application Gateway Ingress (AGIC ingress)
+    ## @param hdp.hdpingressconfiguration.agic.ingressClass The ingress class to be used by the Azure Application Gateway Ingress Controller (AGIC)
+    ## @param hdp.hdpingressconfiguration.haproxy.enabled The parameter for enabling HAProxy ingress (not yet supported)
+    ## @param hdp.hdpingressconfiguration.clusterType The type of cluster on which the HDP server is deployed (on-premises deployments are not yet supported)
+    ## @note "cloud" and "onpremise" are valid values (on-premises deployments are not yet supported)
+    ## @param hdp.hdpingressconfiguration.timeout The timeout in seconds for the ingress controller or load balancer to respond to requests
+    ## @param hdp.hdpingressconfiguration.tls.enabled The parameter for enabling TLS communication with the HDP server
+    ## @param hdp.hdpingressconfiguration.tls.secretName The name of the Kubernetes Secret that contains the TLS certificate and private key
+    ## @note The PEM-formatted SSL certificate and private key must be used to create a Kubernetes secret
+    ## @example: kubectl create secret tls tls-cert --cert=mycert.pem --key=privkey.pem
+    ## @note The name of the secret must be specified with the secretName parameter
+    ## @param hdp.hdpingressconfiguration.labels Map of labels to add to the hdp ingress
+    ## @param hdp.hdpingressconfiguration.annotations Map of annotations to add to the hdp ingress
+    ##
+    enabled: true
+    ingressName: "hdp-ingress"
+    
+    agic:
+      enabled: true  
+      ingressClass: "azure-application-gateway"
+    haproxy:
+      enabled: false # HAProxy ingress is not yet supported
+      ingressClass: "haproxy"
+    clusterType: "cloud" # On-premises deployments are not yet supported
+    timeout: 300
+    tls:
+      enabled: false
+      secretName: ""
+    labels: {}
+    annotations: {}
 
 ## @section PostgreSQL Helm Chart parameters The parameters for configuring the PostgreSQL Helm Chart
 ##
 postgresql:
-  ## @param postgresql.nameOverride String to partially override postgresql.fullname template (will maintain the release name) #@note This allows you to override the name used for the app.kubernetes.io/name label and related resources.
+  ## @param architecture PostgreSQL architecture (`standalone` or `replication`), Default: `standalone`
+  ##
+  architecture: standalone
+  ## Replication configuration
+  ## Ignored if `architecture` is `standalone`
+  ##
+  replication:
+    ## @param postgresql.replication.synchronousCommit Set synchronous commit mode. Allowed values: `on`, `remote_apply`, `remote_write`, `local` and `off`
+    ## @param postgresql.replication.numSynchronousReplicas Number of replicas that will have synchronous replication. Note: Cannot be greater than `readReplicas.replicaCount`.
+    ## ref: https://www.postgresql.org/docs/current/runtime-config-wal.html#GUC-SYNCHRONOUS-COMMIT
+    ##
+    synchronousCommit: "remote_apply"
+    numSynchronousReplicas: 1
+    ## @param postgresql.replication.applicationName Cluster application name. Useful for advanced replication settings
+    ##
+    applicationName: hdp
+  ## @section PostgreSQL read only replica parameters (only used when `postgresql.architecture` is set to `replication`)
+  readReplicas:
+    ## @param postgresql.readReplicas.name Name of the read replicas database (eg secondary, slave, ...)
+    ## @param postgresql.readReplicas.replicaCount Number of PostgreSQL read only replicas
+    ## @param postgresql.readReplicas.extraEnvVars Array with extra environment variables to add to PostgreSQL read only nodes
+    ## @param postgresql.readReplicas.resources Set container requests and limits for different resources like CPU or memory (essential for production workloads)
+    ## @param postgresql.readReplicas.labels Map of labels to add to the statefulset (PostgreSQL read only)
+    ## @param postgresql.readReplicas.annotations Annotations for PostgreSQL read only pods
+    ## @param postgresql.readReplicas.podLabels Map of labels to add to the pods (PostgreSQL read only)
+    ## @param postgresql.readReplicas.podAnnotations Map of annotations to add to the pods (PostgreSQL read only)
+    ## @param postgresql.readReplicas.containerSecurityContext.enabled Enabled containers' Security Context
+    ## @param postgresql.readReplicas.containerSecurityContext.seLinuxOptions [object,nullable] Set SELinux options in container
+    ## @param postgresql.readReplicas.containerSecurityContext.runAsUser Set containers' Security Context runAsUser
+    ## @param postgresql.readReplicas.containerSecurityContext.runAsGroup Set containers' Security Context runAsGroup
+    ## @param postgresql.readReplicas.containerSecurityContext.runAsNonRoot Set container's Security Context runAsNonRoot
+    ## @param postgresql.readReplicas.containerSecurityContext.privileged Set container's Security Context privileged
+    ## @param postgresql.readReplicas.containerSecurityContext.readOnlyRootFilesystem Set container's Security Context readOnlyRootFilesystem
+    ## @param postgresql.readReplicas.containerSecurityContext.allowPrivilegeEscalation Set container's Security Context allowPrivilegeEscalation
+    ## @param postgresql.readReplicas.containerSecurityContext.capabilities.drop List of capabilities to be dropped
+    ## @param postgresql.readReplicas.containerSecurityContext.seccompProfile.type Set container's Security Context seccomp profile
+    ## @param postgresql.readReplicas.podAffinityPreset PostgreSQL read only pod affinity preset. Ignored if `postgresql.primary.affinity` is set. Allowed values: `soft` or `hard`
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+    ## @param postgresql.readReplicas.podAntiAffinityPreset PostgreSQL read only pod anti-affinity preset. Ignored if `postgresql.primary.affinity` is set. Allowed values: `soft` or `hard`
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+    ## @param postgresql.readReplicas.affinity Affinity for PostgreSQL read only pods assignment
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+    ## Note: postgresql.primary.podAffinityPreset, primary.podAntiAffinityPreset, and postgresql.primary.nodeAffinityPreset will be ignored when it's set
+    ## @param postgresql.readReplicas.nodeSelector Node labels for PostgreSQL read only pods assignment
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+    ## @param postgresql.readReplicas.tolerations Tolerations for PostgreSQL read only pods assignment
+    ## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+    ## @param postgresql.readReplicas.topologySpreadConstraints Topology Spread Constraints for pod assignment spread across your cluster among failure-domains. Evaluated as a template
+    ## Ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#spread-constraints-for-pods
+    name: read
+    replicaCount: 2
+    labels: {}
+    annotations: {}
+    podLabels: {}
+    podAnnotations: {}
+    extraEnvVars:
+      - name: POSTGRESQL_MAX_CONNECTIONS
+        value: "400"
+    resources:
+      requests:
+        cpu: 2   
+        memory: 4Gi
+      limits:
+        cpu: 3
+        memory: 6Gi
+    ## Container Security Context
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    containerSecurityContext:
+      enabled: true
+      seLinuxOptions: {}
+      runAsUser: 12321
+      runAsGroup: 12321
+      runAsNonRoot: true
+      privileged: false
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: "RuntimeDefault"
+    podAffinityPreset: ""
+    podAntiAffinityPreset: "soft"
+    ## PostgreSQL read only node affinity preset
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
+    nodeAffinityPreset:
+      ## @param postgresql.readReplicas.nodeAffinityPreset.type PostgreSQL read only node affinity preset type. Ignored if `postgresql.primary.affinity` is set. Allowed values: `soft` or `hard`
+      ## @param postgresql.readReplicas.nodeAffinityPreset.key PostgreSQL read only node label key to match Ignored if `postgresql.primary.affinity` is set.
+      ## E.g.
+      ## key: "kubernetes.io/e2e-az-name"
+      ## @param postgresql.readReplicas.nodeAffinityPreset.values PostgreSQL read only node label values to match. Ignored if `postgresql.primary.affinity` is set.
+      ## E.g.
+      ## values:
+      ##   - e2e-az1
+      ##   - e2e-az2
+      ##
+      type: ""
+      key: ""
+      values: []
+    affinity: {}
+    nodeSelector: {}
+    tolerations: []
+    topologySpreadConstraints: []
+    ## Pod Disruption Budget configuration
+    ## ref: https://kubernetes.io/docs/tasks/run-application/configure-pdb
+    pdb:
+     ## @param postgresql.readReplicas.pdb.create Enable/disable a Pod Disruption Budget creation
+     ## @param postgresql.readReplicas.pdb.minAvailable Minimum number/percentage of pods that should remain scheduled
+     ## @param postgresql.readReplicas.pdb.maxUnavailable Maximum number/percentage of pods that may be made unavailable. Defaults to `1` if both `readReplicas.pdb.minAvailable` and `readReplicas.pdb.maxUnavailable` are empty.
+     ##
+     create: true
+     minAvailable: ""
+     maxUnavailable: "" 
+  ## Authentication parameters
+  ## ref: https://github.com/bitnami/containers/tree/main/bitnami/postgresql#setting-the-root-password-on-first-run
+  ## ref: https://github.com/bitnami/containers/tree/main/bitnami/postgresql#creating-a-database-on-first-run
+  ## ref: https://github.com/bitnami/containers/tree/main/bitnami/postgresql#creating-a-database-user-on-first-run
+  ##
+  auth:
+    ## @param postgresql.auth.replicationUsername Name of the replication user
+    ## @param postgresql.auth.secretKeys.replicationPasswordKey Name of key in existing secret to use for PostgreSQL credentials. Only used when `auth.existingSecret` is set.
+    ## @param postgresql.auth.existingSecret Name of existing secret to use for PostgreSQL credentials. `postgresql.auth.postgresPassword`, `postgresql.auth.password`, and `postgresql.auth.replicationPassword` will be ignored and picked up from this secret. The secret might also contains the key `ldap-password` if LDAP is enabled. `ldap.bind_password` will be ignored and picked from this secret in this case.
+    ##
+    replicationUsername: repl_user
+    existingSecret: "account-database-secrets"
+    secretKeys:
+      replicationPasswordKey: replication-password
+  ## @param postgresql.nameOverride The parameter for overriding the Bitnami PostgreSQL naming template
+  ## @note The value of the postgresql.nameOverride parameter must match the value of the hdp.database.postgres.hostName parameter
   ## @param postgresql.global.security.allowInsecureImages The parameter for skipping image verification
   ## @note Set to true to skip image verification. This is generally not recommended for production environments.
   ## @param postgresql.global.postgresql.auth.database The name of the PostgreSQL system database to be created
   ## @param postgresql.global.postgresql.auth.existingSecret The name of an existing Kubernetes Secret that contains the authentication credentials for the PostgreSQL system database
   ## @param postgresql.global.postgresql.auth.secretKeys.adminPasswordKey The key in the existing Secret that contains the admin password for PostgreSQL
+  ## @param postgresql.commonLabels Add labels to all the deployed resources
+  ## @param postgresql.commonAnnotations Add annotations to all the deployed resources
   ##
   nameOverride: "postgresql"
   global:
@@ -241,6 +455,8 @@ postgresql:
         existingSecret: "account-database-secrets"
         secretKeys:
           adminPasswordKey: "privileged-postgres-password"
+  commonLabels: {}
+  commonAnnotations: {}
   ## Bitnami PostgreSQL image version
   ## ref: https://hub.docker.com/r/bitnami/postgresql/tags/
   ## @param postgresql.image.registry The PostgreSQL image registry [default: REGISTRY_NAME] 
@@ -250,9 +466,9 @@ postgresql:
   ## @param postgresql.image.pullPolicy The PostgreSQL image pull policy
   ##
   image:
-    registry: docker.io
-    repository: bitnami/postgresql
-    tag: 16.6.0
+    registry: docker.io  # SECURITY: Use trusted registry for production (AVD-KSV-0125)
+    repository: bitnamilegacy/postgresql
+    tag: 16.6.0 # Refer https://docs.progress.com/bundle/datadirect-product-compatibility/resource/datadirect-product-compatibility.pdf (Hybrid Data Pipeline External Database Compatibility Matrix) for compatible PostgreSQL version.
     digest: ""
     pullPolicy: IfNotPresent
     ## @param postgresql.image.pullSecrets The parameter to specify image pull secrets
@@ -263,8 +479,63 @@ postgresql:
     ## pullSecrets:
     ##   - myRegistryKeySecretName
     ##
-    pullSecrets: []  
+    pullSecrets: []
+  ## @param postgresql.primary.labels Map of labels to add to the statefulset (postgresql primary)
+  ## @param postgresql.primary.annotations Annotations for PostgreSQL primary pods
+  ## @param postgresql.primary.podLabels Map of labels to add to the pods (postgresql primary)
+  ## @param postgresql.primary.podAnnotations Map of annotations to add to the pods (postgresql primary)
+  ## @param postgresql.primary.affinity Affinity for PostgreSQL primary pods assignment
+  ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+  ## Note: postgresql.primary.podAffinityPreset, postgresql.primary.podAntiAffinityPreset, and postgresql.primary.nodeAffinityPreset will be ignored when it's set
+  ## @param postgresql.primary.nodeSelector Node labels for PostgreSQL primary pods assignment
+  ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+  ## @param postgresql.primary.tolerations Tolerations for PostgreSQL primary pods assignment
+  ## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+  ## @param postgresql.primary.podAffinityPreset PostgreSQL primary pod affinity preset. Ignored if `postgresql.primary.affinity` is set. Allowed values: `soft` or `hard`
+  ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+  ## @param postgresql.primary.podAntiAffinityPreset PostgreSQL primary pod anti-affinity preset. Ignored if `postgresql.primary.affinity` is set. Allowed values: `soft` or `hard`
+  ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+  ## @param postgresql.primary.topologySpreadConstraints Topology Spread Constraints for pod assignment spread across your cluster among failure-domains. Evaluated as a template
+  ## Ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#spread-constraints-for-pods
   primary:
+    labels: {}
+    annotations: {}
+    podLabels: {}
+    podAnnotations: {}
+    affinity: {}
+    nodeSelector: {}
+    tolerations: []
+    podAffinityPreset: ""
+    podAntiAffinityPreset: "soft"
+    topologySpreadConstraints: []
+    ## Configure current cluster's primary server to be the standby server in other cluster.
+    ## This will allow cross cluster replication and provide cross cluster high availability.
+    ## You will need to configure pgHbaConfiguration if you want to enable this feature with local cluster replication enabled.
+    ## @param postgresql.primary.standby.enabled Whether to enable current cluster's primary as standby server of another cluster or not
+    ## @param postgresql.primary.standby.primaryHost The Host of replication primary in the other cluster
+    ## @param postgresql.primary.standby.primaryPort The Port of replication primary in the other cluster
+    ##
+    standby:
+      enabled: false
+      primaryHost: ""
+      primaryPort: ""
+    ## PostgreSQL Primary node affinity preset
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
+    ##
+    ## @param postgresql.primary.nodeAffinityPreset.type PostgreSQL primary node affinity preset type. Ignored if `postgresql.primary.affinity` is set. Allowed values: `soft` or `hard`
+    ## @param postgresql.primary.nodeAffinityPreset.key PostgreSQL primary node label key to match Ignored if `postgresql.primary.affinity` is set.
+    ## E.g.
+    ## key: "kubernetes.io/e2e-az-name"
+    ## @param postgresql.primary.nodeAffinityPreset.values PostgreSQL primary node label values to match. Ignored if `postgresql.primary.affinity` is set.
+    ## E.g.
+    ## values:
+    ##   - e2e-az1
+    ##   - e2e-az2
+    ##
+    nodeAffinityPreset:
+      type: ""
+      key: ""
+      values: []
     ## @param postgresql.primary.persistence.mountPath The path where the persistent volume will be mounted
     ## @param postgresql.primary.persistence.storageClass The name of the StorageClass to be used for the persistent volume
     ## @param postgresql.primary.persistence.size The size of the persistent volume to be requested
@@ -283,12 +554,29 @@ postgresql:
     ## @param postgresql.primary.containerSecurityContext.runAsNonRoot The parameter for running the container as a non-root user
     ## @param postgresql.primary.containerSecurityContext.runAsUser The user ID to run the container
     ## @param postgresql.primary.containerSecurityContext.runAsGroup The group ID to run the container
+    ## @param primary.persistence.annotations Annotations for the PVC
+    ## @param primary.persistence.labels Labels for the PVC
+    ##
     persistence:
       mountPath: /bitnami/postgresql
       storageClass: ""
       size: 8Gi
       accessModes: 
         - ReadWriteOnce
+      annotations: {}
+      labels: {}
+    ## PostgreSQL Primary service configuration
+    ## @param postgresql.primary.service.labels Map of labels to add to the primary service
+    ## @param postgresql.primary.service.annotations Annotations for PostgreSQL primary service
+    ##
+    service:
+      labels: {}
+      annotations: {}
+      ## Headless service properties
+      ## @param postgresql.primary.service.headless.annotations Additional custom annotations for headless PostgreSQL primary service
+      ##
+      headless:
+        annotations: {}
     extraEnvVars:
       - name: POSTGRESQL_MAX_CONNECTIONS
         value: "400"
@@ -299,10 +587,31 @@ postgresql:
       limits:
         cpu: 4
         memory: 8Gi
-    initdb:
-      scriptsSecret: "postgres-initsql"
     containerSecurityContext:
       enabled: true
       runAsNonRoot: true
       runAsUser: 12321
       runAsGroup: 12321
+    ## @section PostgreSQL PodDisruptionBudget Configuration
+    ## @param postgresql.primary.pdb.create Whether to create a PodDisruptionBudget for PostgreSQL primary instance
+    ## @param postgresql.primary.pdb.minAvailable The minimum number or percentage of PostgreSQL pods that must remain available during voluntary disruptions
+    ## @param postgresql.primary.pdb.maxUnavailable The maximum number or percentage of PostgreSQL pods that can be unavailable during voluntary disruptions  
+    ## @note Use either minAvailable OR maxUnavailable, not both
+    ## @note The Bitnami PostgreSQL chart applies smart defaults if neither is specified
+    ## @example:
+    ##   pdb:
+    ##     create: true
+    ##     minAvailable: 1
+    ## @example:
+    ##   pdb:
+    ##     create: true
+    ##     maxUnavailable: 1
+    ## @example:
+    ##   pdb:
+    ##     create: true
+    ##     minAvailable: "50%"
+    ##
+    pdb:
+      create: false
+      minAvailable: ""
+      maxUnavailable: ""

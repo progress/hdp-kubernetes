@@ -1,0 +1,710 @@
+suite: Label Priority Merging Tests
+templates:
+  - statefulset.yaml
+  - hdp-service.yaml
+  - notification-service.yaml
+  - opa-service.yaml
+  - hdp-ingress.yaml
+  - configmap.yaml
+  - logging-properties-configmap.yaml
+  - pvc.yaml
+  - logs-pvc.yaml
+  - pdb.yaml
+  - postgres-init-sql.yaml
+tests:
+  - it: should prioritize StatefulSet labels over common labels
+    template: statefulset.yaml
+    set:
+      hdp.commonLabels:
+        tier: "common-tier"
+        environment: "common-env"
+        app-version: "1.0.0"
+      hdp.labels:
+        tier: "application"
+        component: "backend"
+        app-version: "2.0.0"
+    asserts:
+      # Standard Helm labels should be preserved (lowest priority)
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+      # Common labels should be present where not overridden
+      - equal:
+          path: metadata.labels["environment"]
+          value: "common-env"
+      # Specific labels should override common labels (highest priority)
+      - equal:
+          path: metadata.labels["tier"]
+          value: "application"
+      - equal:
+          path: metadata.labels["component"]
+          value: "backend"
+      - equal:
+          path: metadata.labels["app-version"]
+          value: "2.0.0"
+
+  - it: should prioritize pod labels over common and StatefulSet labels
+    template: statefulset.yaml
+    set:
+      hdp.commonLabels:
+        tier: "common-tier"
+        team: "platform"
+        shared-label: "common"
+      hdp.labels:
+        tier: "application"
+        shared-label: "statefulset"
+        sts-specific: "sts-value"
+      hdp.podLabels:
+        tier: "container"
+        shared-label: "pod"
+        pod-specific: "pod-value"
+    asserts:
+      # StatefulSet metadata should use statefulset-specific labels
+      - equal:
+          path: metadata.labels["tier"]
+          value: "application"
+      - equal:
+          path: metadata.labels["shared-label"]
+          value: "statefulset"
+      - equal:
+          path: metadata.labels["sts-specific"]
+          value: "sts-value"
+      - equal:
+          path: metadata.labels["team"]
+          value: "platform"
+      
+      # Pod template should use pod-specific labels with highest priority
+      - equal:
+          path: spec.template.metadata.labels["tier"]
+          value: "container"
+      - equal:
+          path: spec.template.metadata.labels["shared-label"]
+          value: "pod"
+      - equal:
+          path: spec.template.metadata.labels["pod-specific"]
+          value: "pod-value"
+      - equal:
+          path: spec.template.metadata.labels["team"]
+          value: "platform"
+
+  - it: should prioritize service labels over common labels
+    template: hdp-service.yaml
+    set:
+      hdp.commonLabels:
+        service-type: "common-service"
+        load-balancer: "common-lb"
+        protocol: "http"
+      hdp.services.labels:
+        service-type: "backend"
+        component: "api-gateway"
+        protocol: "https"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["load-balancer"]
+          value: "common-lb"
+      # Service-specific labels override common
+      - equal:
+          path: metadata.labels["service-type"]
+          value: "backend"
+      - equal:
+          path: metadata.labels["component"]
+          value: "api-gateway"
+      - equal:
+          path: metadata.labels["protocol"]
+          value: "https"
+
+  - it: should prioritize notification service labels over common labels
+    template: notification-service.yaml
+    set:
+      hdp.onPremiseConnector.enabled: true
+      hdp.commonLabels:
+        notification-type: "async"
+        message-format: "json"
+        timeout: "30s"
+      hdp.services.labels:
+        notification-type: "webhook"
+        protocol: "https"
+        timeout: "60s"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["message-format"]
+          value: "json"
+      # Service-specific labels override common
+      - equal:
+          path: metadata.labels["notification-type"]
+          value: "webhook"
+      - equal:
+          path: metadata.labels["protocol"]
+          value: "https"
+      - equal:
+          path: metadata.labels["timeout"]
+          value: "60s"
+
+  - it: should prioritize OPA service labels over common labels across multiple replicas
+    template: opa-service.yaml
+    set:
+      hdp.onPremiseConnector.enabled: true
+      hdp.replicaCount: 2
+      hdp.commonLabels:
+        opa-mode: "common-mode"
+        security-level: "standard"
+        region: "us-west"
+      hdp.services.labels:
+        opa-mode: "policy-engine"
+        load-balancing: "round-robin"
+        security-level: "high"
+    asserts:
+      # First OPA service
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+          documentIndex: 0
+      - equal:
+          path: metadata.labels["region"]
+          value: "us-west"
+          documentIndex: 0
+      - equal:
+          path: metadata.labels["opa-mode"]
+          value: "policy-engine"
+          documentIndex: 0
+      - equal:
+          path: metadata.labels["security-level"]
+          value: "high"
+          documentIndex: 0
+      
+      # Second OPA service
+      - equal:
+          path: metadata.labels["load-balancing"]
+          value: "round-robin"
+          documentIndex: 1
+      - equal:
+          path: metadata.labels["opa-mode"]
+          value: "policy-engine"
+          documentIndex: 1
+
+  - it: should prioritize ingress labels over common labels
+    template: hdp-ingress.yaml
+    set:
+      hdp.hdpingressconfiguration.enabled: true
+      hdp.hdpingressconfiguration.agic.enabled: true
+      hdp.commonLabels:
+        ingress-class: "nginx"
+        tls-enabled: "false"
+        load-balancer: "common-lb"
+      hdp.hdpingressconfiguration.labels:
+        ingress-class: "azure-application-gateway"
+        controller: "agic"
+        tls-enabled: "true"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["load-balancer"]
+          value: "common-lb"
+      # Ingress-specific labels override common
+      - equal:
+          path: metadata.labels["ingress-class"]
+          value: "azure-application-gateway"
+      - equal:
+          path: metadata.labels["controller"]
+          value: "agic"
+      - equal:
+          path: metadata.labels["tls-enabled"]
+          value: "true"
+
+  - it: should prioritize configmap labels over common labels
+    template: configmap.yaml
+    set:
+      hdp.commonLabels:
+        config-type: "application"
+        format: "yaml"
+        version: "v1"
+      hdp.configLabels:
+        config-type: "deployment"
+        reload-strategy: "rolling"
+        version: "v2"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["format"]
+          value: "yaml"
+      # Config-specific labels override common
+      - equal:
+          path: metadata.labels["config-type"]
+          value: "deployment"
+      - equal:
+          path: metadata.labels["reload-strategy"]
+          value: "rolling"
+      - equal:
+          path: metadata.labels["version"]
+          value: "v2"
+
+  - it: should prioritize logging configmap labels over common labels
+    template: logging-properties-configmap.yaml
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.commonLabels:
+        log-level: "info"
+        log-format: "text"
+        appender: "console"
+      hdp.configLabels:
+        log-level: "debug"
+        log-rotation: "daily"
+        appender: "file"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["log-format"]
+          value: "text"
+      # Config-specific labels override common
+      - equal:
+          path: metadata.labels["log-level"]
+          value: "debug"
+      - equal:
+          path: metadata.labels["log-rotation"]
+          value: "daily"
+      - equal:
+          path: metadata.labels["appender"]
+          value: "file"
+
+  - it: should prioritize PVC labels over common labels
+    template: pvc.yaml
+    set:
+      hdp.commonLabels:
+        storage-class: "standard"
+        backup-policy: "weekly"
+        retention: "30-days"
+      hdp.persistence.labels:
+        storage-class: "fast-ssd"
+        access-mode: "read-write"
+        retention: "90-days"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["backup-policy"]
+          value: "weekly"
+      # PVC-specific labels override common
+      - equal:
+          path: metadata.labels["storage-class"]
+          value: "fast-ssd"
+      - equal:
+          path: metadata.labels["access-mode"]
+          value: "read-write"
+      - equal:
+          path: metadata.labels["retention"]
+          value: "90-days"
+
+  - it: should prioritize logs PVC labels over common labels
+    template: logs-pvc.yaml
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.commonLabels:
+        storage-tier: "standard"
+        compression: "disabled"
+        backup-schedule: "daily"
+      hdp.persistence.labels:
+        storage-tier: "performance"
+        log-type: "application"
+        compression: "enabled"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["backup-schedule"]
+          value: "daily"
+      # Persistence-specific labels override common
+      - equal:
+          path: metadata.labels["storage-tier"]
+          value: "performance"
+      - equal:
+          path: metadata.labels["log-type"]
+          value: "application"
+      - equal:
+          path: metadata.labels["compression"]
+          value: "enabled"
+
+  - it: should prioritize PDB labels over common labels
+    template: pdb.yaml
+    set:
+      hdp.pdb.create: true
+      hdp.replicaCount: 3
+      hdp.commonLabels:
+        disruption-policy: "default"
+        min-available: "1"
+        availability-zone: "us-west-2a"
+      hdp.pdb.labels:
+        disruption-policy: "conservative"
+        availability-target: "99.9"
+        min-available: "2"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["availability-zone"]
+          value: "us-west-2a"
+      # PDB-specific labels override common
+      - equal:
+          path: metadata.labels["disruption-policy"]
+          value: "conservative"
+      - equal:
+          path: metadata.labels["availability-target"]
+          value: "99.9"
+      - equal:
+          path: metadata.labels["min-available"]
+          value: "2"
+
+  - it: should prioritize secret labels over common labels
+    template: postgres-init-sql.yaml
+    set:
+      hdp.database.postgres.enabled: true
+      hdp.commonLabels:
+        security-level: "standard"
+        encryption: "at-transit"
+        key-management: "manual"
+      hdp.secretLabels:
+        security-level: "high"
+        data-classification: "confidential"
+        encryption: "at-rest"
+    asserts:
+      # Standard labels preserved
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      # Common labels present where not overridden
+      - equal:
+          path: metadata.labels["key-management"]
+          value: "manual"
+      # Secret-specific labels override common
+      - equal:
+          path: metadata.labels["security-level"]
+          value: "high"
+      - equal:
+          path: metadata.labels["data-classification"]
+          value: "confidential"
+      - equal:
+          path: metadata.labels["encryption"]
+          value: "at-rest"
+
+  - it: should validate service selector labels maintain consistency with standard labels
+    templates:
+      - hdp-service.yaml
+      - notification-service.yaml
+      - opa-service.yaml
+    set:
+      hdp.onPremiseConnector.enabled: true
+      hdp.replicaCount: 2
+      hdp.commonLabels:
+        selector-test: "common-selector"
+        environment: "production"
+      hdp.services.labels:
+        selector-test: "service-override"
+        service-type: "backend"
+    asserts:
+      # HDP Service selector should use standard Kubernetes labels
+      - template: hdp-service.yaml
+        equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      - template: hdp-service.yaml
+        equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+      
+      # Notification Service selector should use standard labels
+      - template: notification-service.yaml
+        equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      - template: notification-service.yaml
+        equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+      
+      # OPA Service selector should use standard labels (first instance)
+      - template: opa-service.yaml
+        equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+          documentIndex: 0
+      - template: opa-service.yaml
+        equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+          documentIndex: 0
+
+  - it: should validate StatefulSet selector labels are independent of metadata labels
+    template: statefulset.yaml
+    set:
+      hdp.commonLabels:
+        metadata-label: "common-metadata"
+        tier: "common-tier"
+      hdp.labels:
+        metadata-label: "statefulset-metadata"
+        tier: "application"
+        custom-label: "custom-value"
+      hdp.podLabels:
+        pod-label: "pod-specific"
+        tier: "container"
+    asserts:
+      # StatefulSet metadata should have merged labels
+      - equal:
+          path: metadata.labels["metadata-label"]
+          value: "statefulset-metadata"
+      - equal:
+          path: metadata.labels["tier"]
+          value: "application"
+      - equal:
+          path: metadata.labels["custom-label"]
+          value: "custom-value"
+      
+      # StatefulSet selector should only use standard selector labels
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+      
+      # Pod template labels should include common labels and pod-specific overrides
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      - equal:
+          path: spec.template.metadata.labels["metadata-label"]
+          value: "common-metadata"
+      - equal:
+          path: spec.template.metadata.labels["tier"]
+          value: "container"
+      - equal:
+          path: spec.template.metadata.labels["pod-label"]
+          value: "pod-specific"
+
+  - it: should validate PDB selector targets correct pod labels
+    template: pdb.yaml
+    set:
+      hdp.pdb.create: true
+      hdp.replicaCount: 3
+      hdp.commonLabels:
+        pdb-common: "common-pdb"
+        tier: "common-tier"
+      hdp.labels:
+        tier: "application"
+        statefulset-label: "sts-value"
+      hdp.podLabels:
+        tier: "container"
+        pod-label: "pod-value"
+      hdp.pdb.labels:
+        pdb-specific: "pdb-value"
+        tier: "disruption"
+    asserts:
+      # PDB metadata should have merged PDB-specific labels
+      - equal:
+          path: metadata.labels["pdb-common"]
+          value: "common-pdb"
+      - equal:
+          path: metadata.labels["pdb-specific"]
+          value: "pdb-value"
+      - equal:
+          path: metadata.labels["tier"]
+          value: "disruption"
+      
+      # PDB selector should target standard pod selector labels
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+
+  - it: should validate selector labels can be overridden by commonLabels
+    templates:
+      - hdp-service.yaml
+      - statefulset.yaml
+    set:
+      hdp.commonLabels:
+        app.kubernetes.io/name: "custom-app-name"
+        app.kubernetes.io/instance: "custom-instance"
+        tier: "common"
+      hdp.labels:
+        tier: "application"
+      hdp.services.labels:
+        tier: "service"
+    asserts:
+      # Service selector should use commonLabels overrides
+      - template: hdp-service.yaml
+        equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: "custom-app-name"
+      - template: hdp-service.yaml
+        equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: "custom-instance"
+      
+      # StatefulSet selector should use commonLabels overrides
+      - template: statefulset.yaml
+        equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: "custom-app-name"
+      - template: statefulset.yaml
+        equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: "custom-instance"
+      
+      # Metadata labels show the priority merging (commonLabels can be overridden)
+      - template: hdp-service.yaml
+        equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "custom-app-name"
+      - template: hdp-service.yaml
+        equal:
+          path: metadata.labels["tier"]
+          value: "service"
+      - template: statefulset.yaml
+        equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "custom-app-name"
+      - template: statefulset.yaml
+        equal:
+          path: metadata.labels["tier"]
+          value: "application"
+
+  - it: should demonstrate complete priority system across all resource types
+    templates:
+      - statefulset.yaml
+      - hdp-service.yaml
+      - configmap.yaml
+      - pvc.yaml
+      - hdp-ingress.yaml
+    set:
+      hdp.hdpingressconfiguration.enabled: true
+      hdp.hdpingressconfiguration.agic.enabled: true
+      # Base common labels (lowest priority for custom labels)
+      hdp.commonLabels:
+        environment: "production"
+        team: "platform"
+        priority-test: "common-value"
+        cost-center: "engineering"
+      # Resource-specific labels (highest priority)
+      hdp.labels:
+        priority-test: "statefulset-override"
+        tier: "application"
+      hdp.services.labels:
+        priority-test: "service-override"
+        component: "backend"
+      hdp.configLabels:
+        priority-test: "config-override"
+        format: "properties"
+      hdp.persistence.labels:
+        priority-test: "pvc-override"
+        storage-class: "fast-ssd"
+      hdp.hdpingressconfiguration.labels:
+        priority-test: "ingress-override"
+        controller: "agic"
+    asserts:
+      # StatefulSet - specific labels override common
+      - template: statefulset.yaml
+        equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      - template: statefulset.yaml
+        equal:
+          path: metadata.labels["environment"]
+          value: "production"
+      - template: statefulset.yaml
+        equal:
+          path: metadata.labels["priority-test"]
+          value: "statefulset-override"
+      - template: statefulset.yaml
+        equal:
+          path: metadata.labels["tier"]
+          value: "application"
+      
+      # Service - specific labels override common
+      - template: hdp-service.yaml
+        equal:
+          path: metadata.labels["team"]
+          value: "platform"
+      - template: hdp-service.yaml
+        equal:
+          path: metadata.labels["priority-test"]
+          value: "service-override"
+      - template: hdp-service.yaml
+        equal:
+          path: metadata.labels["component"]
+          value: "backend"
+      
+      # ConfigMap - specific labels override common
+      - template: configmap.yaml
+        equal:
+          path: metadata.labels["cost-center"]
+          value: "engineering"
+      - template: configmap.yaml
+        equal:
+          path: metadata.labels["priority-test"]
+          value: "config-override"
+      - template: configmap.yaml
+        equal:
+          path: metadata.labels["format"]
+          value: "properties"
+      
+      # PVC - specific labels override common
+      - template: pvc.yaml
+        equal:
+          path: metadata.labels["environment"]
+          value: "production"
+      - template: pvc.yaml
+        equal:
+          path: metadata.labels["priority-test"]
+          value: "pvc-override"
+      - template: pvc.yaml
+        equal:
+          path: metadata.labels["storage-class"]
+          value: "fast-ssd"
+      
+      # Ingress - specific labels override common
+      - template: hdp-ingress.yaml
+        equal:
+          path: metadata.labels["team"]
+          value: "platform"
+      - template: hdp-ingress.yaml
+        equal:
+          path: metadata.labels["priority-test"]
+          value: "ingress-override"
+      - template: hdp-ingress.yaml
+        equal:
+          path: metadata.labels["controller"]
+          value: "agic"

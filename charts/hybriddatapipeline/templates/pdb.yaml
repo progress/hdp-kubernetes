@@ -1,0 +1,21 @@
+{{- include "hybriddatapipeline.validatePDB" . }}
+{{- if and .Values.hdp.pdb.create (gt (int .Values.hdp.replicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "hybriddatapipeline.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.pdb.labels "context" .) | nindent 4 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.pdb.annotations "context" .) | nindent 4 }}
+spec:
+  {{- if .Values.hdp.pdb.minAvailable }}
+  minAvailable: {{ .Values.hdp.pdb.minAvailable }}
+  {{- else if .Values.hdp.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.hdp.pdb.maxUnavailable }}
+  {{- else }}
+  {{- /* Apply smart defaults based on replica count */ -}}
+  {{- include "hybriddatapipeline.pdbSmartDefaults" . | nindent 2 }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "hybriddatapipeline.selectorLabels" . | nindent 8 }}
+{{- end }}

@@ -1,0 +1,76 @@
+suite: hdp-ingress
+templates:
+  - hdp-ingress.yaml
+tests:
+  - it: should render Ingress with agic annotations when hdpingressconfiguration.agic.enabled is true
+    set:
+      hdp.hdpingressconfiguration.enabled: true
+      hdp.hdpingressconfiguration.agic.enabled: true
+      hdp.hdpingressconfiguration.haproxy.enabled: false
+      hdp.hdpingressconfiguration.ingressName: agic-ingress
+      hdp.hdpingressconfiguration.tls.enabled: true
+      hdp.hdpingressconfiguration.tls.secretName: tls-cert
+      hdp.hdpingressconfiguration.ingressClass: azure-application-gateway
+      hdp.loadbalancer.hostName: example.com
+      hdp.services.hdpService.name: hdp-service
+      hdp.services.notificationService.name: notification-service
+      hdp.services.notificationService.aclPath: /notify
+      hdp.services.opAccessorService.name: op-accessor-service
+      hdp.services.opAccessorService.aclPath: /access
+      hdp.ports.hdpServer.port: 8080
+      hdp.ports.notificationServer.port: 9090
+      hdp.ports.opAccessor.port: 10010
+    asserts:
+      - isKind:
+          of: Ingress
+      - isAPIVersion:
+          of: networking.k8s.io/v1
+      - equal:
+          path: metadata.annotations
+          value:
+            appgw.ingress.kubernetes.io/cookie-based-affinity: "true"
+            appgw.ingress.kubernetes.io/request-timeout: "300" 
+            appgw.ingress.kubernetes.io/session-affinity-cookie-name: HDP-SESSION  
+            appgw.ingress.kubernetes.io/ssl-redirect: "true"
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-agic-ingress
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+      - equal:
+          path: spec.ingressClassName
+          value: azure-application-gateway
+      - equal:
+          path: spec.rules[0].host
+          value: example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: RELEASE-NAME-hdp-service
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.number
+          value: 8080
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.name
+          value: RELEASE-NAME-notification-service
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.port.number
+          value: 9090
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /notify
+      - equal:
+          path: spec.rules[0].http.paths[2].backend.service.name
+          value: RELEASE-NAME-op-accessor-service-0
+      - equal:
+          path: spec.rules[0].http.paths[2].backend.service.port.number
+          value: 10010
+      - equal:
+          path: spec.rules[0].http.paths[2].path
+          value: /access_RELEASE-NAME-hdp-service-0
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: example.com
+      - equal:
+          path: spec.tls[0].secretName
+          value: tls-cert
