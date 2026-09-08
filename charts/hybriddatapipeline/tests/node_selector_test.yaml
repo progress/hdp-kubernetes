@@ -1,0 +1,180 @@
+suite: Node Selector Tests
+templates:
+  - statefulset.yaml
+chart:
+  version: 1.0.1
+tests:
+  # Test 1: Default behavior - no nodeSelector configured
+  - it: should not render nodeSelector when not configured
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.nodeSelector: {}
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - notExists:
+          path: spec.template.spec.nodeSelector
+
+  # Test 2: Single node selector label
+  - it: should render nodeSelector with a single label
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.nodeSelector:
+        kubernetes.io/os: linux
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: "linux"
+
+  # Test 3: Multiple node selector labels
+  - it: should render nodeSelector with multiple labels
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.nodeSelector:
+        kubernetes.io/os: linux
+        disktype: ssd
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: "linux"
+      - equal:
+          path: spec.template.spec.nodeSelector["disktype"]
+          value: "ssd"
+
+  # Test 4: Node selector targeting a specific node pool / agentpool
+  - it: should render nodeSelector targeting a specific node pool
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.nodeSelector:
+        agentpool: hdppool
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["agentpool"]
+          value: "hdppool"
+
+  # Test 5: Node selector with architecture label
+  - it: should render nodeSelector for a specific CPU architecture
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.nodeSelector:
+        kubernetes.io/arch: amd64
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/arch"]
+          value: "amd64"
+
+  # Test 6: nodeSelector alongside affinity
+  - it: should render both nodeSelector and affinity when both are configured
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.nodeSelector:
+        kubernetes.io/os: linux
+      hdp.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64"]
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: "linux"
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+
+  # Test 7: nodeSelector alongside topologySpreadConstraints
+  - it: should render both nodeSelector and topologySpreadConstraints when both are configured
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.nodeSelector:
+        disktype: ssd
+      hdp.topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: hdp
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["disktype"]
+          value: "ssd"
+      - exists:
+          path: spec.template.spec.topologySpreadConstraints
+
+  # Test 8: nodeSelector with custom environment label
+  - it: should render nodeSelector with a custom environment label
+    set:
+      hdp.eula.accepted: true
+      hdp.image.repository: "test-repo"
+      hdp.image.tag: "test-tag"
+      hdp.nodeSelector:
+        environment: production
+        team: data-platform
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["environment"]
+          value: "production"
+      - equal:
+          path: spec.template.spec.nodeSelector["team"]
+          value: "data-platform"

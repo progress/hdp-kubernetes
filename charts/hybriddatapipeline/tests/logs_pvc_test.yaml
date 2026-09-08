@@ -1,0 +1,99 @@
+suite: Logs PVC
+templates:
+  - logs-pvc.yaml
+
+tests:
+  - it: should not render logs PVC when persistence.logs.enabled is false
+    set:
+      hdp.persistence.logs.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render logs PVC when persistence.logs.enabled is true
+    set:
+      hdp.persistence.logs.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - isAPIVersion:
+          of: v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-logs-storage-volume
+
+  - it: should render logs PVC with ReadWriteMany access mode
+    set:
+      hdp.persistence.logs.enabled: true
+    asserts:
+      - contains:
+          path: spec.accessModes
+          content: ReadWriteMany
+
+  - it: should render logs PVC with default storage size
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.persistence.logs.size: 1Gi
+    asserts:
+      - equal:
+          path: spec.resources.requests.storage
+          value: 1Gi
+
+  - it: should render logs PVC with custom storage size
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.persistence.logs.size: 5Gi
+    asserts:
+      - equal:
+          path: spec.resources.requests.storage
+          value: 5Gi
+
+  - it: should render logs PVC with custom storageClassName
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.persistence.logs.storageClassName: "azurefile-csi"
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: "azurefile-csi"
+
+  - it: should include helm.sh/resource-policy keep annotation on logs PVC
+    set:
+      hdp.persistence.logs.enabled: true
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: "keep"
+
+  - it: should apply commonAnnotations to logs PVC
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.commonAnnotations:
+        backup: "daily"
+    asserts:
+      - equal:
+          path: metadata.annotations["backup"]
+          value: "daily"
+
+  - it: should apply persistence.labels to logs PVC
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.persistence.labels:
+        tier: "storage"
+    asserts:
+      - equal:
+          path: metadata.labels["tier"]
+          value: "storage"
+
+  - it: should include standard helm labels on logs PVC
+    set:
+      hdp.persistence.logs.enabled: true
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"

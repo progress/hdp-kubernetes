@@ -10,6 +10,30 @@ Expand the name of the chart.
 {{- end -}}
 
 {{/*
+Name of the headless Service that governs the HDP StatefulSet.
+StatefulSet.spec.serviceName MUST reference a headless Service so that each
+pod gets a stable per-pod DNS record. Allows override via
+hdp.services.hdpService.headless.nameOverride.
+
+Fails the render if the resulting name exceeds 63 characters (RFC 1123 DNS
+label limit). A silent truncation here would mismatch StatefulSet.spec.serviceName
+(which is immutable) and produce a broken deployment.
+*/}}
+{{- define "hdp.headlessService.name" -}}
+{{- $hs := .Values.hdp.services.hdpService.headless | default dict -}}
+{{- $name := "" -}}
+{{- if $hs.nameOverride -}}
+{{- $name = printf "%s-%s" .Release.Name $hs.nameOverride -}}
+{{- else -}}
+{{- $name = printf "%s-%s-headless" .Release.Name .Values.hdp.services.hdpService.name -}}
+{{- end -}}
+{{- if gt (len $name) 63 -}}
+{{- fail (printf "hdp.services.hdpService.headless name %q is %d chars; must be \u2264 63 (RFC 1123 DNS label). To shorten it: set hdp.services.hdpService.headless.nameOverride to a shorter suffix, shorten hdp.services.hdpService.name (default: hdpserver), or use a shorter Helm release name. Name is composed as '<release>-<hdpService.name>-headless' (or '<release>-<nameOverride>' when nameOverride is set)." $name (len $name)) -}}
+{{- end -}}
+{{- $name -}}
+{{- end -}}
+
+{{/*
 Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
@@ -113,36 +137,7 @@ no
 {{- end -}}
 {{- end -}}
 
-{{/* Validate resource units for memory and CPU */}}
-{{- define "hdp.resources.validate" -}}
-{{- if not (regexMatch "^[0-9]+(Mi|Gi)$" .requests.memory) }}
-{{- fail "Memory request must be specified in Mi or Gi, e.g., 512Mi or 1Gi" }}
-{{- end }}
-{{- if not (regexMatch "^[0-9]+(Mi|Gi)$" .limits.memory) }}
-{{- fail "Memory limit must be specified in Mi or Gi, e.g., 512Mi or 1Gi" }}
-{{- end }}
-{{- if not (regexMatch "^[0-9]+(m)?$" .requests.cpu) }}
-{{- fail "CPU request must be specified in cores or millicores, e.g., 500m or 1" }}
-{{- end }}
-{{- if not (regexMatch "^[0-9]+(m)?$" .limits.cpu) }}
-{{- fail "CPU limit must be specified in cores or millicores, e.g., 1 or 500m" }}
-{{- end }}
-{{- end }}
 
-{{/*
-  Helper function to convert memory values with Mi or Gi suffix to megabytes (MB, base 1000).
-  Usage: {{ include "toMegabytes" "512Mi" }} or {{ include "toMegabytes" "2Gi" }}
-*/}}
-{{- define "toMegabytes" -}}
-{{- $val := . | toString -}}
-{{- if hasSuffix "Gi" $val -}}
-  {{- $val | trimSuffix "Gi" | int | mul 1024 -}}
-{{- else if hasSuffix "Mi" $val -}}
-  {{- $val | trimSuffix "Mi" | int -}}
-{{- else -}}
-  {{- $val | int -}}
-{{- end -}}
-{{- end }}
 
 {{/*
 This function merges standard chart labels, common labels, and specific labels.
@@ -307,6 +302,32 @@ Usage: include "hdp.opaService.baseAnnotations" (dict "context" . "ordinal" $ord
 {{- end }}
 
 {{/*
+Guard: direct per-pod (headless) routing and Ingress-based routing are mutually
+exclusive external access topologies.
+Note: the headless Service Kubernetes object is ALWAYS rendered unconditionally
+— it is required by Kubernetes for the StatefulSet to provide stable per-pod DNS
+records and has nothing to do with this flag. hdp.services.hdpService.headless.enabled
+selects the *external access topology*: when true, the upstream gateway is expected
+to route traffic directly to per-pod DNS records; when false, an Ingress controller
+handles external routing. Both cannot be active simultaneously.
+Call this template from any always-rendered template (e.g. statefulset.yaml).
+*/}}
+{{- define "hdp.validate.headlessIngressConflict" -}}
+{{- if and (.Values.hdp.services.hdpService.headless.enabled) (.Values.hdp.hdpingressconfiguration.enabled) -}}
+  {{- fail "Configuration conflict: hdp.services.hdpService.headless.enabled: true cannot be combined with hdp.hdpingressconfiguration.enabled: true. The headless Service Kubernetes object is always present (required by the StatefulSet); hdp.services.hdpService.headless.enabled selects direct per-pod DNS as the external access topology, which conflicts with Ingress-based routing. Set hdp.hdpingressconfiguration.enabled: false to use direct per-pod routing, or set hdp.services.hdpService.headless.enabled: false to keep Ingress as the external access path." -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Validate that hdp.persistence.logs.enabled and hdp.logCollection.enabled are not both true.
+*/}}
+{{- define "hdp.validate.logsStorageConflict" -}}
+{{- if and (.Values.hdp.persistence.logs.enabled) (.Values.hdp.logCollection.enabled) -}}
+  {{- fail "hdp.persistence.logs.enabled and hdp.logCollection.enabled cannot both be true. Set hdp.persistence.logs.enabled: false when log collection is active." -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Validate PDB configuration for HDP
 */}}
 {{- define "hybriddatapipeline.validatePDB" -}}
@@ -329,5 +350,4 @@ minAvailable: 1
 minAvailable: 1
 {{- end }}
 {{- end }}
-
 

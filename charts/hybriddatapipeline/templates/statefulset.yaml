@@ -1,9 +1,5 @@
-{{- $reqMem := (toString (default "4096Mi" .Values.hdp.resources.requests.memory)) -}}
-{{- $limMem := (toString (default "4096Mi" .Values.hdp.resources.limits.memory)) -}}
-{{- $reqCpu := (toString (default "2000m" .Values.hdp.resources.requests.cpu)) -}}
-{{- $limCpu := (toString (default "2000m" .Values.hdp.resources.limits.cpu)) -}}
-# Call the validation helper
-{{- include "hdp.resources.validate" (dict "requests" (dict "memory" $reqMem "cpu" $reqCpu) "limits" (dict "memory" $limMem "cpu" $limCpu)) }}
+{{- include "hdp.validate.headlessIngressConflict" . -}}
+{{- include "hdp.validate.logsStorageConflict" . -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -11,8 +7,22 @@ metadata:
   annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.annotations "context" .) | nindent 4 }}
   name: {{ .Release.Name }}-{{ .Values.hdp.services.hdpService.name }}
   namespace: {{ .Release.Namespace }}
+{{- $stsName := printf "%s-%s" .Release.Name .Values.hdp.services.hdpService.name }}
+{{- if .Release.IsUpgrade }}
+{{- $existingSts := lookup "apps/v1" "StatefulSet" .Release.Namespace $stsName }}
+{{- if $existingSts }}
+  {{- $currentSvcName := $existingSts.spec.serviceName | default "" }}
+  {{- $desiredSvcName := include "hdp.headlessService.name" . }}
+  {{- if and $currentSvcName (ne $currentSvcName $desiredSvcName) }}
+    {{- fail (printf "UPGRADE BLOCKED: StatefulSet '%s' has spec.serviceName='%s' but this chart requires '%s'. spec.serviceName is immutable. To proceed, delete the StatefulSet (pods will be preserved) and re-run helm upgrade:\n  kubectl delete statefulset %s -n %s --cascade=orphan\n  helm upgrade ..." $stsName $currentSvcName $desiredSvcName $stsName .Release.Namespace) }}
+  {{- end }}
+{{- end }}
+{{- end }}
 spec:
-  serviceName: {{ .Release.Name }}-{{ .Values.hdp.services.hdpService.name }}
+  # serviceName MUST reference a headless Service so each pod gets a stable
+  # DNS hostname (<pod>.<headlessSvc>.<ns>.svc.cluster.local), per
+  # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#limitations
+  serviceName: {{ include "hdp.headlessService.name" . }}
   replicas: {{ .Values.hdp.replicaCount }}
   updateStrategy:
     type: RollingUpdate
@@ -39,11 +49,20 @@ spec:
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.hdp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.hdp.logCollection.enabled }}
+      # Fix 2: terminationGracePeriodSeconds must exceed the total flush window.
+      # Total window = 15s (preStop) + 30s (fluent-bit grace) + buffer = ~50s. 90s gives headroom.
+      terminationGracePeriodSeconds: 90
+      {{- end }}
       initContainers:
       # PostgreSQL Database Initialization - runs at every startup
       {{- if .Values.hdp.database.postgres.enabled }}
       - name: postgres-db-init
-        image: {{ .Values.postgresql.image.registry }}/{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}
+        image: {{ .Values.postgresql.image.registry }}/{{ .Values.postgresql.image.repository }}{{- if .Values.postgresql.image.digest }}@{{ .Values.postgresql.image.digest }}{{- else }}:{{ .Values.postgresql.image.tag }}{{- end }}
         env:
         - name: PGHOST
           value: "{{ .Release.Name }}-{{ .Values.hdp.database.postgres.hostName }}{{ if eq .Values.postgresql.architecture "replication" }}-primary{{ end }}"
@@ -58,6 +77,26 @@ spec:
               key: {{ .Values.postgresql.global.postgresql.auth.secretKeys.adminPasswordKey }}
         - name: PGDATABASE
           value: {{ .Values.postgresql.global.postgresql.auth.database }}
+        - name: HDP_ADMIN_PG_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: hdp-secrets
+              key: account-database-admin-username
+        - name: HDP_ADMIN_PG_USERPWD
+          valueFrom:
+            secretKeyRef:
+              name: hdp-secrets
+              key: account-database-admin-password
+        - name: HDP_USER_PG_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: hdp-secrets
+              key: account-database-user-username
+        - name: HDP_USER_PG_USERPWD
+          valueFrom:
+            secretKeyRef:
+              name: hdp-secrets
+              key: account-database-user-password
         command:
         - /bin/bash
         - -c
@@ -135,27 +174,19 @@ spec:
             echo 'Config Map mounted and properties file copied to /hdpshare!'
             
             {{- if .Values.hdp.hdpingressconfiguration.tls.enabled }}
-            # Copy TLS certificates
-            cat /certs/tls.crt /certs/tls.key > /hdpshare/hdp-cert.pem
+            if [ ! -s /certs/tls.crt ] || [ ! -s /certs/tls.key ]; then
+              echo "ERROR: /certs/tls.crt and/or /certs/tls.key are missing or empty." >&2
+              echo "       Verify the Secret '{{ .Values.hdp.hdpingressconfiguration.tls.secretName }}' contains both keys." >&2
+              exit 1
+            fi
+            umask 077
+            if ! { cat /certs/tls.crt && echo && cat /certs/tls.key && echo; } > /hdpshare/hdp-cert.pem; then
+              echo "ERROR: Failed to write /hdpshare/hdp-cert.pem from mounted TLS certificate and key." >&2
+              exit 1
+            fi
+            chmod 600 /hdpshare/hdp-cert.pem
             echo 'Certificate copied to /hdpshare!'
             {{- end }}
-            
-            # Detect Java installation
-            {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
-            SEARCH_PATH="/app"
-            {{- else }}
-            SEARCH_PATH="/home/hdpuser"
-            {{- end }}
-            
-            JAVA_EXECUTABLE=$(find $SEARCH_PATH -name 'java' -type f -path '*/bin/java' 2>/dev/null | head -1)
-            if [ -n "$JAVA_EXECUTABLE" ] && [ -x "$JAVA_EXECUTABLE" ]; then
-              JAVA_HOME_PATH=$(dirname $(dirname $JAVA_EXECUTABLE))
-              echo "$JAVA_HOME_PATH" > /hdpshare/java_home.txt
-              echo "JRE detected at: $JAVA_HOME_PATH (executable: $JAVA_EXECUTABLE)"
-            else
-              echo "" > /hdpshare/java_home.txt
-              echo "No valid Java executable found in $SEARCH_PATH"
-            fi
         resources:
           requests:
             memory: "256Mi"
@@ -195,14 +226,6 @@ spec:
             - "/bin/sh"
             - "-c"
             - |
-              # Set Java Home if detected
-              if [ -f /hdpshare/java_home.txt ]; then
-                export HDP_JAVA_HOME=$(cat /hdpshare/java_home.txt)
-                echo "Using JRE at: $HDP_JAVA_HOME"
-                # Clean up the temporary file after use
-                rm -f /hdpshare/java_home.txt
-              fi
-              
               # Start HDP server
               {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
               ${HDP_INSTALL_HOME}/Progress/DataDirect/scripts/startup.sh
@@ -219,9 +242,26 @@ spec:
             - name: internal
               containerPort: 8190
           env:
+          {{- if .Values.hdp.extraEnvVars }}
+            {{- range .Values.hdp.extraEnvVars }}
+            {{- if or .value .valueFrom }}
+            - name: {{ .name }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- else }}
+            {{- fail (printf "extraEnvVars entry '%s' must have either 'value' or 'valueFrom' specified" .name) }}
+            {{- end }}
+            {{- end }}
+          {{- end }}
           {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
             - name: HDP_INSTALL_HOME
               value: /app
+            - name: HDP_JAVA_HOME
+              value: /app/jdk-17.0.13+11-jre  # Must match Dockerfile ARG HDP_JAVA_HOME
           {{- end }}
             - name: ACCEPT_EULA
               value: "{{.Values.hdp.eula.accepted}}"
@@ -260,6 +300,16 @@ spec:
                 secretKeyRef:
                   name: hdp-secrets
                   key: hdp-license-key
+            {{- $tzFlag := dict "found" false }}
+            {{- range .Values.hdp.extraEnvVars }}
+            {{- if eq .name "TZ" }}{{- $_ := set $tzFlag "found" true }}{{- end }}
+            {{- end }}
+            {{- if not (get $tzFlag "found") }}
+            - name: TZ
+              value: "UTC"
+            {{- end }}
+            - name: LC_ALL
+              value: "C"
           volumeMounts:
           {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
           - name: hdp-app
@@ -273,10 +323,8 @@ spec:
             mountPath: /hdpprops
           - name: shared-storage-volume
             mountPath: {{ .Values.hdp.persistence.keystore.mountPath }}
-          {{- if .Values.hdp.persistence.logs.enabled }}
           - name: logs-storage-volume
-            mountPath: {{ .Values.hdp.persistence.logs.mountPath }}
-          {{- end }}
+            mountPath: {{ .Values.hdp.persistence.logs.mountPath | default "/logs" }}
           {{- if .Values.hdp.livenessProbe.enabled }}
           livenessProbe:
             httpGet:
@@ -311,18 +359,167 @@ spec:
             successThreshold: {{ .Values.hdp.startupProbe.successThreshold }}
           {{- end }}
           resources:
-            requests:
-              memory: {{ $reqMem | quote }}
-              cpu: {{ $reqCpu | quote }}
-            limits:
-              memory: {{ $limMem | quote }}
-              cpu: {{ $limCpu | quote }}       
+            {{- toYaml .Values.hdp.resources | nindent 12 }}
+        {{- if .Values.hdp.logCollection.enabled }}
+        - name: fluent-bit
+          image: "{{ .Values.hdp.logCollection.image.repository }}:{{ .Values.hdp.logCollection.image.tag }}"
+          imagePullPolicy: {{ .Values.hdp.logCollection.image.pullPolicy | default "IfNotPresent" }}
+          command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.yaml"]
+          lifecycle:
+            preStop:
+              exec:
+                # Fix 2: delay Fluent Bit SIGTERM by 15s so the HDP server finishes writing
+                # its shutdown logs before Fluent Bit begins its grace flush window.
+                # Timeline: t=0 SIGTERM → t=15 preStop done → t=15..45 grace flush → t=90 SIGKILL (never reached)
+                command: ["/bin/sh", "-c", "sleep 15"]
+          {{- if .Values.hdp.logCollection.containerSecurityContext }}
+          securityContext:
+            {{- toYaml .Values.hdp.logCollection.containerSecurityContext | nindent 12 }}
+          {{- end }}
+          env:
+            - name: FB_CONFIG_DIR
+              value: /fluent-bit/etc
+            - name: FB_DB_DIR
+              value: /fluent-bit/db
+            # Downward API: used to scope log paths to this pod only (shared RWX PVC)
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: HDP_HEADLESS_SVC
+              value: "{{ include "hdp.headlessService.name" . }}"
+            # HDP_POD_FQDN = <pod>.<headless-svc>.<ns>.svc.cluster.local
+            # StatefulSet.spec.serviceName always points to the headless Service, so
+            # the pod's FQDN is always <pod>.<headless-svc>.<ns>.svc.cluster.local
+            # regardless of hdp.services.hdpService.headless.enabled.
+            # e.g. hdp-deploy-hdpserver-0.hdp-deploy-hdpserver-headless.default.svc.cluster.local
+            - name: HDP_POD_FQDN
+              value: "$(POD_NAME).$(HDP_HEADLESS_SVC).$(POD_NAMESPACE).svc.cluster.local"
+            - name: HDP_LOG_BASE
+              value: "{{ .Values.hdp.persistence.logs.mountPath | default "/logs" }}/$(HDP_POD_FQDN)"
+            - name: DEPLOYMENT_ENV
+              value: "kubernetes"
+            - name: HDP_VERSION
+              value: {{ .Chart.AppVersion | quote }}
+            - name: HDP_BUILD
+              value: {{ .Values.hdp.image.tag | quote }}
+            - name: HDP_CLUSTER
+              value: {{ .Values.hdp.loadbalancer.hostName | quote }}
+            - name: READ_FROM_HEAD
+              value: {{ .Values.hdp.logCollection.fluentbit.readFromHead | default "false" | quote }}
+            - name: FB_HTTP_SERVER
+              value: {{ .Values.hdp.logCollection.fluentbit.httpServer | default "on" | quote }}
+            - name: FB_MAX_CHUNKS
+              value: {{ .Values.hdp.logCollection.fluentbit.maxChunksUp | default 128 | quote }}
+            - name: FB_LOG_LEVEL
+              value: {{ .Values.hdp.logCollection.fluentbit.logLevel | default "info" | quote }}
+            - name: TIME_OFFSET
+              value: {{ .Values.hdp.logCollection.timeOffset | default "+0000" | quote }}
+            - name: LC_ALL
+              value: "C"
+            - name: LANG
+              value: "C"
+            - name: HDP_LOG_DAS_PATHS
+              value: "$(HDP_LOG_BASE)/das/*.log"
+            - name: HDP_LOG_TOMCAT_PATHS
+              value: "$(HDP_LOG_BASE)/tomcat/catalina.*.log,$(HDP_LOG_BASE)/tomcat/localhost.*.log,$(HDP_LOG_BASE)/tomcat/manager*.log,$(HDP_LOG_BASE)/tomcat/host-manager*.log"
+            - name: HDP_LOG_TOMCAT_EXCLUDE_PATHS
+              value: "$(HDP_LOG_BASE)/tomcat/shutdown.log,$(HDP_LOG_BASE)/tomcat/localhost_access*.log"
+            - name: HDP_LOG_ACCESS_PATHS
+              value: "$(HDP_LOG_BASE)/tomcat/localhost_access*.log"
+            - name: HDP_LOG_CATALINA_OUT_PATHS
+              value: "$(HDP_LOG_BASE)/tomcat/catalina.out"
+            - name: HDP_LOG_SHUTDOWN_PATHS
+              value: "$(HDP_LOG_BASE)/tomcat/shutdown.log"
+            - name: HDP_LOG_HDPUI_PATHS
+              value: "$(HDP_LOG_BASE)/hdpui/*.log"
+            - name: HDP_LOG_NOTIFICATION_PATHS
+              value: "$(HDP_LOG_BASE)/notification/*.log,$(HDP_LOG_BASE)/notification/palette/*.log"
+            - name: HDP_LOG_INSTALL_DEPLOY_PATHS
+              value: "$(HDP_LOG_BASE)/install/deploy.log"
+            - name: HDP_LOG_INSTALL_ERROR_PATHS
+              value: "$(HDP_LOG_BASE)/install/error.log"
+            - name: HDP_LOG_INSTALL_FINAL_PATHS
+              value: "$(HDP_LOG_BASE)/install/final.log"
+            - name: HDP_LOG_INSTALL_SCHEMA_PATHS
+              value: "$(HDP_LOG_BASE)/install/hdpCloudSchema.*.log"
+            - name: HDP_LOG_INSTALL_DEBUG_PATHS
+              value: "$(HDP_LOG_BASE)/install/debug.log"
+            - name: DAS_EXCLUDE_PATH
+              value: ""
+          {{- if .Values.hdp.logCollection.extraEnvVars }}
+            {{- range .Values.hdp.logCollection.extraEnvVars }}
+            {{- if or .value .valueFrom }}
+            - name: {{ .name }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- else }}
+            {{- fail (printf "logCollection.extraEnvVars entry '%s' must have either 'value' or 'valueFrom' specified" .name) }}
+            {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.hdp.logCollection.extraEnvFrom }}
+          envFrom:
+            {{- toYaml .Values.hdp.logCollection.extraEnvFrom | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: fluent-bit-main
+              mountPath: /fluent-bit/etc/fluent-bit.yaml
+              subPath: fluent-bit.yaml
+              readOnly: true
+            - name: fluent-bit-parsers
+              mountPath: /fluent-bit/etc/parsers.conf
+              subPath: parsers.conf
+              readOnly: true
+            - name: fluent-bit-parsers-multiline
+              mountPath: /fluent-bit/etc/parsers-multiline.conf
+              subPath: parsers-multiline.conf
+              readOnly: true
+            - name: fluent-bit-enrich
+              mountPath: /fluent-bit/etc/enrich.lua
+              subPath: enrich.lua
+              readOnly: true
+            - name: fluent-bit-redact
+              mountPath: /fluent-bit/etc/redact.lua
+              subPath: redact.lua
+              readOnly: true
+            - name: fluent-bit-db
+              mountPath: /fluent-bit/db
+            - name: logs-storage-volume
+              mountPath: {{ .Values.hdp.persistence.logs.mountPath | default "/logs" }}
+              readOnly: true
+          {{- if .Values.hdp.logCollection.extraVolumeMounts }}
+            {{- toYaml .Values.hdp.logCollection.extraVolumeMounts | nindent 12 }}
+          {{- end }}
+          {{- if .Values.hdp.logCollection.resources }}
+          resources:
+            {{- toYaml .Values.hdp.logCollection.resources | nindent 12 }}
+          {{- end }}
+          {{- if eq (.Values.hdp.logCollection.fluentbit.httpServer | default "on") "on" }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.hdp.logCollection.fluentbit.httpPort | default 2020 }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
+        {{- end }}
       volumes:
         # PostgreSQL initialization scripts (available to main container)
         {{- if .Values.hdp.database.postgres.enabled }}
         - name: postgres-init-scripts
-          secret:
-            secretName: {{ include "hybriddatapipeline.fullname" . }}-postgres-init
+          configMap:
+            name: {{ include "hybriddatapipeline.fullname" . }}-postgres-init
             defaultMode: 0755
         {{- end }}
         {{- if .Values.hdp.containerSecurityContext.readOnlyRootFilesystem }}
@@ -335,6 +532,18 @@ spec:
           emptyDir:
             medium: Memory
         {{- end }}    
+        - name: properties
+          projected:
+            sources:
+              - configMap:
+                  name: {{ .Release.Name }}-configmap
+              - configMap:
+                  name: {{ .Release.Name }}-logging-properties-configmap
+        {{- if .Values.hdp.hdpingressconfiguration.tls.enabled }}
+        - name: certs
+          secret:
+            secretName: {{ .Values.hdp.hdpingressconfiguration.tls.secretName }}
+        {{- end }}
         - name: shared-storage-volume
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-shared-storage-volume
@@ -342,20 +551,31 @@ spec:
         - name: logs-storage-volume
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-logs-storage-volume
+        {{- else }}
+        - name: logs-storage-volume
+          emptyDir: {}
         {{- end }}
-        - name: properties
-          projected: 
-            sources:
-              - configMap:
-                  name: {{ .Release.Name }}-configmap
-              {{- if .Values.hdp.persistence.logs.enabled }}
-              - configMap:
-                  name: {{ .Release.Name }}-logging-properties-configmap
-              {{- end }}
-        {{- if .Values.hdp.hdpingressconfiguration.tls.enabled }}
-        - name: certs
-          secret:
-            secretName: {{ .Values.hdp.hdpingressconfiguration.tls.secretName }}
+        {{- if .Values.hdp.logCollection.enabled }}
+        - name: fluent-bit-main
+          configMap:
+            name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-main
+        - name: fluent-bit-parsers
+          configMap:
+            name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-parsers
+        - name: fluent-bit-parsers-multiline
+          configMap:
+            name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-parsers-multiline
+        - name: fluent-bit-enrich
+          configMap:
+            name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-enrich
+        - name: fluent-bit-redact
+          configMap:
+            name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-redact
+        - name: fluent-bit-db
+          emptyDir: {}
+        {{- if .Values.hdp.logCollection.extraVolumes }}
+        {{- toYaml .Values.hdp.logCollection.extraVolumes | nindent 8 }}
+        {{- end }}
         {{- end }}
       {{- if .Values.hdp.imagePullSecrets }}
       imagePullSecrets: 

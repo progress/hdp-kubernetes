@@ -1,0 +1,9 @@
+# Test values for fluent-bit configmap tests.
+# Provides minimum required output to satisfy the fail guard in config/fluent-bit/fluent-bit.yaml.
+hdp:
+  logCollection:
+    enabled: true
+    outputs:
+      - name: stdout
+        match: "*"
+        format: json_lines

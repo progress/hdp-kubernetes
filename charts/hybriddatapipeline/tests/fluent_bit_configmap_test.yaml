@@ -1,0 +1,436 @@
+suite: Fluent Bit ConfigMaps
+templates:
+  - fluent-bit-configmaps.yaml
+# fluent_bit_test_values.yaml provides: logCollection.enabled=true + a stdout output to satisfy
+# the fail guard in config/fluent-bit/fluent-bit.yaml (outputs must not be empty).
+values:
+  - fluent_bit_test_values.yaml
+
+tests:
+  - it: should not render any Fluent Bit ConfigMaps when logCollection.enabled is false (the default)
+    set:
+      hdp.logCollection.enabled: false  # overrides the test values file which sets true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render exactly 5 Fluent Bit ConfigMaps when logCollection.enabled is true
+    asserts:
+      - hasDocuments:
+          count: 5
+
+  - it: should render fluent-bit-main ConfigMap with correct name
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-main
+        documentIndex: 0
+      - isNotNull:
+          path: data["fluent-bit.yaml"]
+        documentIndex: 0
+
+  - it: should render fluent-bit-parsers ConfigMap with correct name
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-parsers
+        documentIndex: 1
+      - isNotNull:
+          path: data["parsers.conf"]
+        documentIndex: 1
+
+  - it: should render fluent-bit-parsers-multiline ConfigMap with correct name
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 2
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-parsers-multiline
+        documentIndex: 2
+      - isNotNull:
+          path: data["parsers-multiline.conf"]
+        documentIndex: 2
+
+  - it: should render fluent-bit-enrich ConfigMap with correct name
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 3
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-enrich
+        documentIndex: 3
+      - isNotNull:
+          path: data["enrich.lua"]
+        documentIndex: 3
+
+  - it: should render fluent-bit-redact ConfigMap with correct name
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 4
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-redact
+        documentIndex: 4
+      - isNotNull:
+          path: data["redact.lua"]
+        documentIndex: 4
+
+  - it: should apply configLabels to all Fluent Bit ConfigMaps
+    set:
+      hdp.configLabels:
+        team: "platform"
+    asserts:
+      - equal:
+          path: metadata.labels["team"]
+          value: "platform"
+        documentIndex: 0
+      - equal:
+          path: metadata.labels["team"]
+          value: "platform"
+        documentIndex: 4
+
+  - it: should apply commonLabels to Fluent Bit ConfigMaps
+    set:
+      hdp.commonLabels:
+        env: "production"
+    asserts:
+      - equal:
+          path: metadata.labels["env"]
+          value: "production"
+        documentIndex: 0
+
+  - it: should include standard helm labels on Fluent Bit ConfigMaps
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+        documentIndex: 0
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+        documentIndex: 0
+
+  - it: should render fluent-bit-main ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.outputs:
+        - name: stdout
+          match: "*"
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-main
+        documentIndex: 0
+      - isNotNull:
+          path: data["fluent-bit.yaml"]
+        documentIndex: 0
+
+  - it: should render fluent-bit-parsers ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.outputs:
+        - name: stdout
+          match: "*"
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-parsers
+        documentIndex: 1
+      - isNotNull:
+          path: data["parsers.conf"]
+        documentIndex: 1
+
+  - it: should render fluent-bit-parsers-multiline ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.outputs:
+        - name: stdout
+          match: "*"
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 2
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-parsers-multiline
+        documentIndex: 2
+      - isNotNull:
+          path: data["parsers-multiline.conf"]
+        documentIndex: 2
+
+  - it: should render fluent-bit-enrich ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.outputs:
+        - name: stdout
+          match: "*"
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 3
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-enrich
+        documentIndex: 3
+      - isNotNull:
+          path: data["enrich.lua"]
+        documentIndex: 3
+
+  - it: should render fluent-bit-redact ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.outputs:
+        - name: stdout
+          match: "*"
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 4
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-redact
+        documentIndex: 4
+      - isNotNull:
+          path: data["redact.lua"]
+        documentIndex: 4
+
+  - it: should apply configLabels to all Fluent Bit ConfigMaps
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.outputs:
+        - name: stdout
+          match: "*"
+      hdp.configLabels:
+        team: "platform"
+    asserts:
+      - equal:
+          path: metadata.labels["team"]
+          value: "platform"
+        documentIndex: 0
+      - equal:
+          path: metadata.labels["team"]
+          value: "platform"
+        documentIndex: 4
+
+  - it: should apply commonLabels to Fluent Bit ConfigMaps
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.outputs:
+        - name: stdout
+          match: "*"
+      hdp.commonLabels:
+        env: "production"
+    asserts:
+      - equal:
+          path: metadata.labels["env"]
+          value: "production"
+        documentIndex: 0
+
+  - it: should include standard helm labels on Fluent Bit ConfigMaps
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.outputs:
+        - name: stdout
+          match: "*"
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+        documentIndex: 0
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+        documentIndex: 0
+
+  - it: should render fluent-bit-main ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-main
+        documentIndex: 0
+      - isNotNull:
+          path: data["fluent-bit.yaml"]
+        documentIndex: 0
+
+  - it: should render fluent-bit-parsers ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-parsers
+        documentIndex: 1
+      - isNotNull:
+          path: data["parsers.conf"]
+        documentIndex: 1
+
+  - it: should render fluent-bit-parsers-multiline ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 2
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-parsers-multiline
+        documentIndex: 2
+      - isNotNull:
+          path: data["parsers-multiline.conf"]
+        documentIndex: 2
+
+  - it: should render fluent-bit-enrich ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 3
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-enrich
+        documentIndex: 3
+      - isNotNull:
+          path: data["enrich.lua"]
+        documentIndex: 3
+
+  - it: should render fluent-bit-redact ConfigMap with correct name
+    set:
+      hdp.logCollection.enabled: true
+    asserts:
+      - isKind:
+          of: ConfigMap
+        documentIndex: 4
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hybriddatapipeline-fluent-bit-redact
+        documentIndex: 4
+      - isNotNull:
+          path: data["redact.lua"]
+        documentIndex: 4
+
+  - it: should apply configLabels to all Fluent Bit ConfigMaps
+    set:
+      hdp.logCollection.enabled: true
+      hdp.configLabels:
+        team: "platform"
+    asserts:
+      - equal:
+          path: metadata.labels["team"]
+          value: "platform"
+        documentIndex: 0
+      - equal:
+          path: metadata.labels["team"]
+          value: "platform"
+        documentIndex: 4
+
+  - it: should apply commonLabels to Fluent Bit ConfigMaps
+    set:
+      hdp.logCollection.enabled: true
+      hdp.commonLabels:
+        env: "production"
+    asserts:
+      - equal:
+          path: metadata.labels["env"]
+          value: "production"
+        documentIndex: 0
+
+  - it: should include standard helm labels on Fluent Bit ConfigMaps
+    set:
+      hdp.logCollection.enabled: true
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: "hybriddatapipeline"
+        documentIndex: 0
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: "RELEASE-NAME"
+        documentIndex: 0
+  - it: should render extraRecordFields as a modify filter in fluent-bit.yaml
+    set:
+      hdp.logCollection.extraRecordFields:
+        org.team: "platform-sre"
+        deployment.region: "eastus"
+    asserts:
+      - matchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "- org.team platform-sre"
+        documentIndex: 0
+      - matchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "- deployment.region eastus"
+        documentIndex: 0
+
+  - it: should not render extraRecordFields modify filter when map is empty
+    set:
+      hdp.logCollection.extraRecordFields: {}
+    asserts:
+      - notMatchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "Customer static log attributes"
+        documentIndex: 0
+
+  - it: should render extraFilters verbatim in fluent-bit.yaml after redaction filters
+    set:
+      hdp.logCollection.extraFilters:
+        - name: modify
+          match: "hdp.das"
+          set:
+            - team.owner payments-platform
+    asserts:
+      - matchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "Customer filter extensions"
+        documentIndex: 0
+      - matchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "team.owner payments-platform"
+        documentIndex: 0
+      # Ordering: redact_opc_tokens must appear before the extraFilters block
+      - matchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "(?s)redact_opc_tokens.*Customer filter extensions"
+        documentIndex: 0
+      # Ordering: post-extraFilters redaction pass must appear after extraFilters
+      - matchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "(?s)Customer filter extensions.*Post-extraFilters redaction pass"
+        documentIndex: 0
+
+  - it: should not render extraFilters block when list is empty
+    asserts:
+      - notMatchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "Customer filter extensions"
+        documentIndex: 0
+
+  - it: should render grace 30 in fluent-bit service config
+    asserts:
+      - matchRegex:
+          path: data["fluent-bit.yaml"]
+          pattern: "grace: 30"
+        documentIndex: 0

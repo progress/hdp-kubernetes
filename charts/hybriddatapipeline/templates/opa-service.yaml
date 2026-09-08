@@ -24,6 +24,14 @@ spec:
     port: {{ $global.Values.hdp.ports.opAccessor.port }}
     protocol: TCP
     targetPort: {{ $global.Values.hdp.ports.opAccessor.targetPort }}
-  selector: {{- include "hybriddatapipeline.selectorLabels" $global | nindent 8 }}
+  selector:
+    {{- include "hybriddatapipeline.selectorLabels" $global | nindent 4 }}
+    # Pin this per-ordinal Service to a single StatefulSet pod via the
+    # `statefulset.kubernetes.io/pod-name` label that the StatefulSet
+    # controller applies automatically to StatefulSet-managed pods.
+    # Without this, the selector matches ALL replicas and kube-proxy
+    # round-robins requests to opaccessor-N across every pod, defeating
+    # per-ordinal addressability (HDP-14962).
+    statefulset.kubernetes.io/pod-name: {{ $global.Release.Name }}-{{ $global.Values.hdp.services.hdpService.name }}-{{ $ordinal }}
 {{- end }}
 {{- end }}

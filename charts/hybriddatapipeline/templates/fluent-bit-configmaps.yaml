@@ -1,0 +1,62 @@
+{{- if .Values.hdp.logCollection.enabled }}
+# ── Fluent Bit Main Config ───────────────────────────────────────────
+# Pipeline definition: inputs, parsers, filters, outputs.
+# Helm-rendered at deploy time (tpl) — values are substituted before mounting.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-main
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.configLabels "context" .) | nindent 4 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.configAnnotations "context" .) | nindent 4 }}
+data:
+  fluent-bit.yaml: |-
+    {{- tpl (.Files.Get "config/fluent-bit/fluent-bit.yaml") . | nindent 4 }}
+---
+# ── Single-line Parsers ──────────────────────────────────────────────
+# Named parsers referenced by [INPUT] Parser and [FILTER] parser directives.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-parsers
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.configLabels "context" .) | nindent 4 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.configAnnotations "context" .) | nindent 4 }}
+data:
+  parsers.conf: |-
+    {{- .Files.Get "config/fluent-bit/parsers.conf" | nindent 4 }}
+---
+# ── Multiline Parsers ────────────────────────────────────────────────
+# State-machine parsers for stack traces and multi-line log formats.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-parsers-multiline
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.configLabels "context" .) | nindent 4 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.configAnnotations "context" .) | nindent 4 }}
+data:
+  parsers-multiline.conf: |-
+    {{- .Files.Get "config/fluent-bit/parsers-multiline.conf" | nindent 4 }}
+---
+# ── Enrich (Lua) ─────────────────────────────────────────────────────
+# Lua script: adds deployment metadata fields to every log record.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-enrich
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.configLabels "context" .) | nindent 4 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.configAnnotations "context" .) | nindent 4 }}
+data:
+  enrich.lua: |-
+    {{- .Files.Get "config/fluent-bit/enrich.lua" | nindent 4 }}
+---
+# ── Redact (Lua) ─────────────────────────────────────────────────────
+# Lua script: scrubs SAML tokens, OPC tokens, and passwords from log records.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hybriddatapipeline.fullname" . }}-fluent-bit-redact
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.configLabels "context" .) | nindent 4 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.configAnnotations "context" .) | nindent 4 }}
+data:
+  redact.lua: |-
+    {{- .Files.Get "config/fluent-bit/redact.lua" | nindent 4 }}
+{{- end }}

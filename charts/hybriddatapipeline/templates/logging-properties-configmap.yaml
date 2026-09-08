@@ -1,4 +1,3 @@
-{{- if .Values.hdp.persistence.logs.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,4 +7,3 @@ metadata:
 data:
   hdplogging.properties: |-
 {{ tpl (.Files.Get (printf "config/hdplogging.properties")) . | indent 4 }}
-{{- end }}

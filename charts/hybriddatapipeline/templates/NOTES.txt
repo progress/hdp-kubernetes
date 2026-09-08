@@ -32,6 +32,59 @@ To view the logs for Hybrid Data Pipeline Container(s), use:
 
   kubectl logs -l app=hdp-server-app --namespace={{ .Release.Namespace }}
 
+{{- if .Release.IsUpgrade }}
+⚠️  UPGRADE NOTE — ACTION MAY BE REQUIRED:
+This release sets StatefulSet.spec.serviceName to the new headless Service
+({{ include "hdp.headlessService.name" . }}). This field is IMMUTABLE in Kubernetes.
+If you are upgrading from a chart version that did not include the headless
+Service, Kubernetes will reject the upgrade with an immutability error.
+
+Remediation (pods are preserved, only the StatefulSet controller is recreated):
+
+  kubectl delete statefulset {{ .Release.Name }}-{{ .Values.hdp.services.hdpService.name }} \
+    --namespace={{ .Release.Namespace }} --cascade=orphan
+  helm upgrade {{ .Release.Name }} <chart> [your flags]
+
+{{- end }}
+{{- if .Values.hdp.services.hdpService.headless.enabled }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HEADLESS MODE — Per-pod endpoints
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Headless Service: {{ include "hdp.headlessService.name" . }}
+
+Each pod is directly addressable via its stable per-pod DNS record:
+{{- $replicas := int .Values.hdp.replicaCount }}
+{{- range $i := until $replicas }}
+
+  Pod {{ $i }}: {{ $.Release.Name }}-{{ $.Values.hdp.services.hdpService.name }}-{{ $i }}.{{ include "hdp.headlessService.name" $ }}.{{ $.Release.Namespace }}.svc.cluster.local
+{{- end }}
+
+Ports on each pod endpoint:
+  {{ .Values.hdp.ports.hdpServer.port }}      hdpserver-port       HDP REST API / UI
+  {{ .Values.hdp.ports.opAccessor.port }}   opaccessor-port      On-Premises Connector (OPC)
+  {{ .Values.hdp.ports.notificationServer.port }}   notification-port    Notification Server
+  8190       internal-api-port    Internal cluster API (do not expose externally)
+
+The following items are NOT provided by this chart in headless mode
+and must be configured in the upstream gateway or infrastructure:
+  - TLS termination / certificate management
+  - Sticky-session / affinity cookies
+  - Public hostname and DNS registration
+  - Web-application firewall (WAF) rules
+
+{{- else }}
+Each HDP pod is reachable in-cluster via the headless Service at:
+
+  <pod>.{{ include "hdp.headlessService.name" . }}.{{ .Release.Namespace }}.svc.cluster.local
+
+For example, to address replica 0 directly:
+
+  curl http://{{ .Release.Name }}-{{ .Values.hdp.services.hdpService.name }}-0.{{ include "hdp.headlessService.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.hdp.ports.hdpServer.port }}/api/healthcheck
+
+Use this for session-sticky in-cluster clients that must pin to a specific pod.
+{{- end }}
+
 To get more information about the release:
 
   helm status {{ .Release.Name }} --namespace={{ .Release.Namespace }}

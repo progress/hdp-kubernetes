@@ -9,7 +9,6 @@ tests:
       hdp.services.hdpService.name: "hdp-service"
       hdp.eula.accepted: "true"
       hdp.replicaCount: 3
-      hdp.updateStrategy.type: "RollingUpdate"
       hdp.image.repository: "my-repo"
       hdp.image.tag: "latest"
       hdp.image.pullPolicy: "IfNotPresent"
@@ -18,7 +17,6 @@ tests:
       hdp.ports.hdpServer.port: 8080
       hdp.ports.opAccessor.port: 8081
       hdp.ports.notificationServer.port: 8082
-      hdp.persistence.mountPath: "/data"
       hdp.livenessProbe.enabled: true
       hdp.livenessProbe.initialDelaySeconds: 30
       hdp.livenessProbe.periodSeconds: 10
@@ -115,10 +113,10 @@ tests:
           path: spec.template.spec.containers[0].resources.limits.cpu
           value: "500m"
       - equal:
-          path: spec.template.spec.volumes[6].projected.sources[0].configMap.name
+          path: spec.template.spec.volumes[4].projected.sources[0].configMap.name
           value: "RELEASE-NAME-configmap"
       - equal:
-          path: spec.template.spec.volumes[6].projected.sources[1].configMap.name
+          path: spec.template.spec.volumes[4].projected.sources[1].configMap.name
           value: "RELEASE-NAME-logging-properties-configmap"
 
   # Test StatefulSet with PostgreSQL replication enabled
@@ -150,7 +148,7 @@ tests:
           path: spec.template.spec.containers[0].image
           value: "my-repo:latest"
       - equal:
-          path: spec.template.spec.volumes[6].projected.sources[0].configMap.name
+          path: spec.template.spec.volumes[4].projected.sources[0].configMap.name
           value: "RELEASE-NAME-configmap"
 
   # Test StatefulSet with PostgreSQL standalone configuration (default)
@@ -179,7 +177,7 @@ tests:
           path: spec.template.spec.containers[0].image
           value: "my-repo:latest"
       - equal:
-          path: spec.template.spec.volumes[6].projected.sources[0].configMap.name
+          path: spec.template.spec.volumes[4].projected.sources[0].configMap.name
           value: "RELEASE-NAME-configmap"
 
   - it: should render postgres-db-init container when PostgreSQL is enabled
@@ -205,18 +203,496 @@ tests:
       - equal:
           path: spec.template.spec.initContainers[0].env[1].value
           value: "5432"
+      # BI-01 fix: DB user credentials injected at runtime via secretKeyRef, not baked into manifest
+      - equal:
+          path: spec.template.spec.initContainers[0].env[5].name
+          value: "HDP_ADMIN_PG_USERNAME"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[5].valueFrom.secretKeyRef.name
+          value: "hdp-secrets"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[5].valueFrom.secretKeyRef.key
+          value: "account-database-admin-username"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[6].name
+          value: "HDP_ADMIN_PG_USERPWD"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[6].valueFrom.secretKeyRef.name
+          value: "hdp-secrets"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[6].valueFrom.secretKeyRef.key
+          value: "account-database-admin-password"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[7].name
+          value: "HDP_USER_PG_USERNAME"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[7].valueFrom.secretKeyRef.name
+          value: "hdp-secrets"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[7].valueFrom.secretKeyRef.key
+          value: "account-database-user-username"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[8].name
+          value: "HDP_USER_PG_USERPWD"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[8].valueFrom.secretKeyRef.name
+          value: "hdp-secrets"
+      - equal:
+          path: spec.template.spec.initContainers[0].env[8].valueFrom.secretKeyRef.key
+          value: "account-database-user-password"
       - equal:
           path: spec.template.spec.initContainers[0].volumeMounts[0].name
           value: "postgres-init-scripts"
       - equal:
           path: spec.template.spec.volumes[0].name
           value: "postgres-init-scripts"
+      # BI-01 fix: init script mounted from ConfigMap, not Secret
+      - exists:
+          path: spec.template.spec.volumes[0].configMap
+      - notExists:
+          path: spec.template.spec.volumes[0].secret
 
   - it: should not render postgres-db-init when PostgreSQL is disabled
     set:
+      hdp.replicaCount: 1
       hdp.database.postgres.enabled: false
       hdp.eula.accepted: "true"
     asserts:
       - equal:
           path: spec.template.spec.initContainers[0].name
           value: "init-properties"
+
+  # --- hdp.nodeSelector tests ---
+
+  - it: should not render nodeSelector when not configured
+    set:
+      hdp.eula.accepted: "true"
+      hdp.nodeSelector: {}
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - notExists:
+          path: spec.template.spec.nodeSelector
+
+  - it: should render nodeSelector with a single label
+    set:
+      hdp.eula.accepted: "true"
+      hdp.nodeSelector:
+        kubernetes.io/os: linux
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: "linux"
+
+  - it: should render nodeSelector with multiple labels
+    set:
+      hdp.eula.accepted: "true"
+      hdp.nodeSelector:
+        disktype: ssd
+        kubernetes.io/arch: amd64
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.nodeSelector.disktype
+          value: "ssd"
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/arch"]
+          value: "amd64"
+
+  - it: should render both nodeSelector and affinity when both are set
+    set:
+      hdp.eula.accepted: "true"
+      hdp.nodeSelector:
+        kubernetes.io/os: linux
+      hdp.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64"]
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: "linux"
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+
+  # --- toYaml passthrough with numeric CPU and fractional memory ---
+
+  - it: should render resources correctly with string CPU and fractional memory via toYaml
+    set:
+      hdp.resources.requests.memory: "1.5Gi"
+      hdp.resources.requests.cpu: "0.5"
+      hdp.resources.limits.memory: "2.5Gi"
+      hdp.resources.limits.cpu: "2"
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: "1.5Gi"
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: "0.5"
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: "2.5Gi"
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: "2"
+
+  # --- Fluent Bit sidecar container tests ---
+
+  - it: should render fluent-bit sidecar when logCollection.enabled is true
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: "fluent-bit"
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: "docker.io/fluent/fluent-bit:5.0.4"
+
+  - it: should not render fluent-bit sidecar when logCollection.enabled is false
+    set:
+      hdp.logCollection.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 1
+
+  - it: should inject FB_LOG_LEVEL defaulting to info when fluentbit.logLevel is not set
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: FB_LOG_LEVEL
+            value: "info"
+
+  - it: should inject FB_LOG_LEVEL with custom level from fluentbit.logLevel
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.logCollection.fluentbit.logLevel: "debug"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: FB_LOG_LEVEL
+            value: "debug"
+
+  - it: should append extraEnvVars to sidecar env block
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.logCollection.extraEnvVars:
+        - name: TIME_OFFSET
+          value: "+0530"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: TIME_OFFSET
+            value: "+0530"
+
+  - it: should allow FB_LOG_LEVEL override via extraEnvVars without helm upgrade
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.logCollection.fluentbit.logLevel: "info"
+      hdp.logCollection.extraEnvVars:
+        - name: FB_LOG_LEVEL
+          value: "trace"
+    asserts:
+      # Both the static and extra entries are present; K8s last-definition-wins at runtime
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: FB_LOG_LEVEL
+            value: "trace"
+
+  # --- extraEnvFrom / extraVolumeMounts / extraVolumes ---
+
+  - it: should render envFrom on fluent-bit sidecar when extraEnvFrom is set
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+      hdp.logCollection.extraEnvFrom:
+        - secretRef:
+            name: otel-auth-secret
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[1].envFrom
+          content:
+            secretRef:
+              name: otel-auth-secret
+
+  - it: should append extraVolumeMounts to fluent-bit sidecar when set
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+      hdp.logCollection.extraVolumeMounts:
+        - name: custom-lua
+          mountPath: /fluent-bit/etc/custom.lua
+          subPath: custom.lua
+          readOnly: true
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[1].volumeMounts
+          content:
+            name: custom-lua
+            mountPath: /fluent-bit/etc/custom.lua
+            subPath: custom.lua
+            readOnly: true
+
+  - it: should append extraVolumes to pod spec when logCollection is enabled and extraVolumes is set
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+      hdp.logCollection.extraVolumes:
+        - name: custom-lua-scripts
+          configMap:
+            name: my-lua-configmap
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: custom-lua-scripts
+            configMap:
+              name: my-lua-configmap
+
+  # --- logs-storage-volume PVC vs emptyDir ---
+
+  - it: should use emptyDir for logs-storage-volume when persistence.logs.enabled is false
+    set:
+      hdp.persistence.logs.enabled: false
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.volumes[2].name
+          value: "logs-storage-volume"
+      - isNotNull:
+          path: spec.template.spec.volumes[2].emptyDir
+
+  - it: should use PVC for logs-storage-volume when persistence.logs.enabled is true
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.volumes[2].name
+          value: "logs-storage-volume"
+      - equal:
+          path: spec.template.spec.volumes[2].persistentVolumeClaim.claimName
+          value: "RELEASE-NAME-logs-storage-volume"
+
+  # --- Fluent Bit volumes ---
+
+  - it: should render fluent-bit volumes when logCollection.enabled is true
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+      hdp.persistence.logs.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.volumes[3].name
+          value: "fluent-bit-main"
+      - equal:
+          path: spec.template.spec.volumes[4].name
+          value: "fluent-bit-parsers"
+      - equal:
+          path: spec.template.spec.volumes[5].name
+          value: "fluent-bit-parsers-multiline"
+      - equal:
+          path: spec.template.spec.volumes[6].name
+          value: "fluent-bit-enrich"
+      - equal:
+          path: spec.template.spec.volumes[7].name
+          value: "fluent-bit-redact"
+      - equal:
+          path: spec.template.spec.volumes[8].name
+          value: "fluent-bit-db"
+      - equal:
+          path: spec.template.spec.volumes[8].emptyDir
+          value: {}
+
+  - it: should always render fluent-bit-db emptyDir volume and mount it at /fluent-bit/db
+    set:
+      hdp.logCollection.enabled: true
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.persistence.logs.enabled: false
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      # fluent-bit-db emptyDir volume must always be present (Azure Files SMB cannot host SQLite)
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: fluent-bit-db
+            emptyDir: {}
+      # fluent-bit container db mount must always use fluent-bit-db emptyDir
+      - equal:
+          path: spec.template.spec.containers[1].volumeMounts[5].name
+          value: "fluent-bit-db"
+      - equal:
+          path: spec.template.spec.containers[1].volumeMounts[5].mountPath
+          value: "/fluent-bit/db"
+
+  - it: should set terminationGracePeriodSeconds to 90 when logCollection.enabled is true
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 90
+
+  - it: should not set terminationGracePeriodSeconds when logCollection.enabled is false
+    set:
+      hdp.logCollection.enabled: false
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - isNull:
+          path: spec.template.spec.terminationGracePeriodSeconds
+
+  - it: should have preStop sleep 15 lifecycle hook on fluent-bit
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.containers[1].lifecycle.preStop.exec.command
+          value: ["/bin/sh", "-c", "sleep 15"]
+
+  - it: should render Fluent Bit liveness probe when httpServer is on (default)
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+      # httpServer defaults to "on" — probe must be rendered
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - isNotNull:
+          path: spec.template.spec.containers[1].livenessProbe
+
+  - it: should not render Fluent Bit liveness probe when httpServer is off
+    set:
+      hdp.logCollection.enabled: true
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+      hdp.logCollection.fluentbit.httpServer: "off"
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - isNull:
+          path: spec.template.spec.containers[1].livenessProbe
+
+  - it: should not render fluent-bit volumes when logCollection.enabled is false
+    set:
+      hdp.logCollection.enabled: false
+      hdp.database.postgres.enabled: false
+      hdp.containerSecurityContext.readOnlyRootFilesystem: false
+      hdp.hdpingressconfiguration.tls.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 3
+

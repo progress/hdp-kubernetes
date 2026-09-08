@@ -1,6 +1,6 @@
 ## Progress DataDirect Hybrid Data Pipeline Helm Chart Manifest
 
-## Copyright 2025 Progress Software Corporation and/or its subsidiaries or affiliates. All Rights Reserved.
+## Copyright (c) 2025-2026 Progress Software Corporation and/or its subsidiaries or affiliates. All rights reserved.
 
 ## @section hdp The parameters for configuring the Hybrid Data Pipeline (HDP) server. The Hybrid Data Pipeline Helm Chart is used to deploy the HDP server as a Kubernetes pod in a Kubernetes cluster.
 ##
@@ -12,7 +12,7 @@ hdp:
   ## @note Setting 'accepted: true' indicates that you have read and agreed to the EULA.
   ## @note Failure to accept the EULA may result in deployment failure.
   eula:
-    accepted: false  # Indicates explicit acceptance of the EULA. Set to true to proceed. Review the EULA before accepting.
+    accepted: false  # Set to true to accept the EULA before deploying. Review: https://www.progress.com/legal/license-agreements/datadirect
   ## @param commonLabels Add labels to all the hdp deployed resources
   ##
   commonLabels: {}
@@ -50,6 +50,8 @@ hdp:
   ## @param hdp.image.repository The fully qualified name of the registry login server and the name of HDP Docker image
   ## @param hdp.image.tag The four digit tag used to identify a version of the Docker image
   ## @param hdp.image.pullPolicy The policy for pulling the Docker image
+  ## @note SECURITY: Customer-owned setting. Use a customer-approved registry and prefer digest pinning in production.
+  ## @note Also review and update any publicly pulled chart defaults (for example Fluent Bit and PostgreSQL) per enterprise policy.
   ##
   image:
     repository: 
@@ -61,7 +63,11 @@ hdp:
   ##   - myRegistryKeySecretName
   ##
   imagePullSecrets: []
+
   ## @param hdp.loadbalancer.hostName The FQDN used for external access to Hybrid Data Pipeline
+  ## @note Used only in Ingress mode (hdp.hdpingressconfiguration.enabled: true).
+  ## Not required when hdp.services.hdpService.headless.enabled: true — in that topology
+  ## TLS termination, DNS registration, and hostname management are handled externally.
   ##
   loadbalancer:
     hostName: 
@@ -114,24 +120,274 @@ hdp:
   ## @note This value is not configurable and must not be changed
   ## @param hdp.persistence.keystore.size The size of the persistent volume to be requested
   ## @param hdp.persistence.keystore.storageClassName The name of the StorageClass to be used for the persistent volume
-  ## @param hdp.persistence.logs.enabled The parameter for enabling persistent storage for logs
-  ## @param hdp.persistence.logs.mountPath The directory path within the container where the persistent volume for logs will be mounted
-  ## @param hdp.persistence.logs.size The size of the persistent volume to be requested for logs
-  ## @param hdp.persistence.logs.storageClassName The name of the StorageClass to be used for the persistent volume for logs
-  ## @param hdp.persistence.labels Additional lables to be added to the  persistent volume
+  ## @param hdp.persistence.logs.enabled Enable a dedicated PVC for log storage. Mutually exclusive with hdp.logCollection.enabled — must be false when log collection is active (SMB2 lease conflict). Chart fails at render time if both are true.
+  ## @param hdp.persistence.logs.mountPath Mount path inside the hdp-server container and, when hdp.logCollection.enabled is true, inside the Fluent Bit sidecar to read server logs
+  ## @param hdp.persistence.logs.size PVC storage request for logs
+  ## @param hdp.persistence.logs.storageClassName StorageClass for the logs PVC (must support ReadWriteMany)
+  ## @param hdp.persistence.labels Additional labels to be added to the persistent volume
   ## @param hdp.persistence.annotations Additional Annotations for the persistent volume
   persistence:
     keystore:
       mountPath: /hdpshare # This value is not configurable and must not be changed
-      size: 1Gi
+      size: 2Gi
       storageClassName: 
     logs:
-      enabled: true
+      enabled: true  # Must be false when hdp.logCollection.enabled: true — chart fails at render time if both are true
       mountPath: /logs
-      size: 1Gi
+      size: 5Gi
       storageClassName: 
     labels: {}
     annotations: {}
+  ## Fluent Bit Sidecar Log Collection
+  ## @param hdp.logCollection.enabled Deploy the Fluent Bit sidecar and create its ConfigMap.
+  ## @note Requires hdp.persistence.logs.enabled: false. Both cannot be true simultaneously — set it explicitly when enabling log collection.
+  ##
+  logCollection:
+    enabled: false ## @note Requires hdp.persistence.logs.enabled: false
+
+    ## @param hdp.logCollection.extraEnvVars Additional or override environment variables for the Fluent Bit sidecar.
+    ## Entries are appended after the static env block. Because Kubernetes resolves duplicate
+    ## env var names last-definition-wins, any static variable can be overridden here.
+    ## Common overrides: DAS_EXCLUDE_PATH.
+    ## @example
+    ## extraEnvVars:
+    ##   - name: DAS_EXCLUDE_PATH
+    ##     value: "$(HDP_LOG_BASE)/das/debug.log"
+    ##   - name: MY_SECRET
+    ##     valueFrom:
+    ##       secretKeyRef:
+    ##         name: my-secret
+    ##         key: my-key
+    ##
+    extraEnvVars: []
+
+    ## @param hdp.logCollection.extraEnvFrom Bulk environment injection for the Fluent Bit sidecar.
+    ## Renders directly as the container's `envFrom:` block. Accepts secretRef and configMapRef entries.
+    ## Use this to inject OTel collector authentication tokens or other bulk key sets from an existing
+    ## Secret or ConfigMap without enumerating each key individually via extraEnvVars.
+    ## The consumer is responsible for creating the referenced Secret/ConfigMap before helm install/upgrade.
+    ## @example
+    ## extraEnvFrom:
+    ##   - secretRef:
+    ##       name: otel-collector-auth          # All keys become env vars in the sidecar
+    ##   - configMapRef:
+    ##       name: fluent-bit-runtime-config    # Optional: ConfigMap keys injected the same way
+    ##
+    extraEnvFrom: []
+
+    ## @param hdp.logCollection.timeOffset Timezone offset applied to JULI-format log timestamps (±HHMM).
+    ## Applies to: DAS, Tomcat JULI rotation files, notification, shutdown, HDPUI, and Spring Boot 2.7.x
+    ## lines in catalina.out (‘hdp_catalina_out_springboot_legacy’ sub-format). Configured in parsers.conf.
+    ## Does NOT apply to: Spring Boot 3.x lines in catalina.out (ISO 8601 UTC ‘Z’ suffix — no offset needed),
+    ## access logs (embedded timezone via %z), deploy.log/error.log/final.log (parsed by Lua using
+    ## utc_time() which always produces UTC regardless of this setting).
+    ## On-premise deployments where the JVM runs in local time will still get incorrect timestamps
+    ## for deploy/error/final logs even when this value is set. Set TZ=UTC in hdp.extraEnvVars (the
+    ## server container env — not hdp.logCollection.extraEnvVars) to force the JVM to write UTC timestamps.
+    ## Example: +0530 (IST), -0500 (EST).
+    timeOffset: "+0000"
+
+    ## @param hdp.logCollection.extraRecordFields Static key-value map stamped on every Fluent Bit log record.
+    ## Rendered into a Fluent Bit modify filter that runs before HDP platform field enrichment.
+    ## Keys must follow OTel naming conventions: lowercase, dot-separated, owner-namespaced.
+    ## Avoid the `hdp.*` namespace — platform fields (hdp.cluster, hdp.image_tag, etc.) are injected
+    ## after extraRecordFields and will overwrite any matching keys. service.name is the only
+    ## exception: Lua sets it only when absent, so a customer value for service.name will persist.
+    ## Values support ${ENV_VAR} references resolved from the sidecar environment at runtime
+    ## (variables injected via extraEnvVars or extraEnvFrom are both eligible).
+    ##
+    ## IMPORTANT — OTel label promotion: when the default OTel collector config is used, certain keys
+    ## (org.team, org.cost_center, deployment.region, customer.account_id, etc.) are configured for
+    ## label promotion and extracted from the log body into indexed labels by the OTel collector.
+    ## Promoted fields do NOT appear as log body attributes in the downstream log store.
+    ## When using Loki, query them as stream labels (dots become underscores):
+    ##   {org_team="platform-sre"}           ← stream selector (indexed label)
+    ## NOT as log body fields:
+    ##   | json | org_team="platform-sre"     ← will return no results
+    ## Fields not configured for label promotion remain in the log body.
+    ## @example
+    ## extraRecordFields:
+    ##   org.team: "platform-sre"
+    ##   org.cost_center: "cc-1042"
+    ##   deployment.region: "eastus"
+    ##   customer.account_id: "${CUSTOMER_ACCOUNT_ID}"
+    ##
+    extraRecordFields: {}
+
+    ## @param hdp.logCollection.extraFilters Raw Fluent Bit filter blocks injected verbatim AFTER all
+    ## HDP redaction filters. Supports any native Fluent Bit filter plugin.
+    ## A mandatory post-extraFilters redaction pass (redact_secrets) runs after these filters,
+    ## ensuring any field added or rewritten by a customer filter is scrubbed before egress.
+    ## Do not rely on extraFilters to emit cleartext secrets — use hdp.logCollection.outputs for
+    ## trusted destinations only.
+    ## @example
+    ## extraFilters:
+    ##   - name: modify
+    ##     match: "hdp.das"
+    ##     set:
+    ##       - team.owner payments-platform
+    ##   - name: grep
+    ##     match: "hdp.tomcat"
+    ##     exclude: level DEBUG   # scalar "<field> <regex>" — nested maps not supported in FB 5.x
+    ##   - name: lua
+    ##     match: "*"
+    ##     script: /fluent-bit/etc/custom.lua
+    ##     call: add_metadata
+    ##
+    extraFilters: []
+
+    ## @param hdp.logCollection.extraVolumes Additional pod-level volumes appended to the StatefulSet
+    ## pod spec when log collection is enabled. Use together with extraVolumeMounts to mount custom
+    ## Lua scripts, additional config files, or any other content into the Fluent Bit sidecar.
+    ## Accepts any valid Kubernetes volume definition. The consumer is responsible for creating any
+    ## referenced ConfigMap or Secret before helm install/upgrade.
+    ## @example
+    ## extraVolumes:
+    ##   - name: custom-lua
+    ##     configMap:
+    ##       name: my-custom-lua-scripts        # Pre-existing ConfigMap with Lua script keys
+    ##   - name: otel-ca-bundle
+    ##     secret:
+    ##       secretName: otel-ca-bundle         # TLS CA bundle for OTel collector mTLS
+    ##
+    extraVolumes: []
+
+    ## @param hdp.logCollection.extraVolumeMounts Additional volume mounts appended to the Fluent Bit
+    ## sidecar container. Use together with extraVolumes to make custom Lua scripts or other files
+    ## accessible inside the container. Mount paths under /fluent-bit/etc/ are recommended for
+    ## Lua scripts so they can be referenced in extraFilters as script: /fluent-bit/etc/custom.lua.
+    ## @example
+    ## extraVolumeMounts:
+    ##   - name: custom-lua
+    ##     mountPath: /fluent-bit/etc/custom.lua
+    ##     subPath: custom.lua                  # Key name inside the ConfigMap
+    ##     readOnly: true
+    ##   - name: otel-ca-bundle
+    ##     mountPath: /etc/ssl/otel-ca.crt
+    ##     subPath: ca.crt
+    ##     readOnly: true
+    ##
+    extraVolumeMounts: []
+
+    ## @param hdp.logCollection.image.repository Fluent Bit container image repository
+    ## @param hdp.logCollection.image.tag Fluent Bit image tag
+    ## @param hdp.logCollection.image.pullPolicy Image pull policy
+    ## @note SECURITY: Public default is kept for backward compatibility and ease of evaluation.
+    ## @note For production, override to a customer-approved private registry and prefer digest pinning.
+    ##
+    image:
+      repository: docker.io/fluent/fluent-bit
+      tag: "5.0.4"
+      # pullPolicy: IfNotPresent  # Optional: K8s default is IfNotPresent for tagged images
+
+    ## @param hdp.logCollection.resources.requests.cpu Minimum CPU for the Fluent Bit sidecar
+    ## @param hdp.logCollection.resources.requests.memory Minimum memory for the Fluent Bit sidecar
+    ## @param hdp.logCollection.resources.limits.cpu Maximum CPU for the Fluent Bit sidecar
+    ## @param hdp.logCollection.resources.limits.memory Maximum memory for the Fluent Bit sidecar
+    ## Optional: if omitted, the Fluent Bit container runs unbounded (cluster LimitRange may apply defaults).
+    ##
+    # resources:
+    #   requests:
+    #     cpu: 100m
+    #     memory: 128Mi
+    #   limits:
+    #     cpu: 500m
+    #     memory: 256Mi
+
+    ## @param hdp.logCollection.containerSecurityContext Security context for the Fluent Bit sidecar container
+    ## Optional: if omitted, no securityContext is applied to the Fluent Bit container.
+    ## Recommended for production/hardened clusters.
+    ##
+    # containerSecurityContext:
+    #   allowPrivilegeEscalation: false
+    #   readOnlyRootFilesystem: true
+    #   runAsNonRoot: true
+    #   runAsUser: 12321
+    #   runAsGroup: 100
+    #   capabilities:
+    #     drop: ["ALL"]
+    #   seccompProfile:
+    #     type: RuntimeDefault
+
+
+    ## @param hdp.logCollection.fluentbit.logLevel Fluent Bit daemon log level (error/warn/info/debug/trace).
+    ##   Injected as the FB_LOG_LEVEL env var into the sidecar. Change via helm upgrade using this key.
+    ## @param hdp.logCollection.fluentbit.httpServer Enable Fluent Bit built-in HTTP server (metrics/health)
+    ## @param hdp.logCollection.fluentbit.httpPort Port for the Fluent Bit HTTP server
+    ## @param hdp.logCollection.fluentbit.maxChunksUp storage.max_chunks_up — max in-memory chunks before spilling to disk
+    ## @param hdp.logCollection.fluentbit.readFromHead Tail inputs re-read files from the beginning on pod start
+    ## logLevel and httpPort match Fluent Bit built-in defaults and can be omitted safely.
+    ## httpServer is explicitly "on" (Fluent Bit default: "off") — set to "off" to disable the /metrics endpoint and liveness probe.
+    ## maxChunksUp and readFromHead are commented out; when omitted, chart-template defaults (128, false) are
+    ## injected via statefulset env vars — these match Fluent Bit built-in defaults.
+    ##
+    fluentbit:
+      logLevel: info         # Default: info. Options: error/warn/info/debug/trace.
+      httpServer: "on"       # Chart default: "on". Set to "off" to disable /metrics endpoint and liveness probe.
+      httpPort: 2020
+      # maxChunksUp: 128
+      # readFromHead: "false"
+
+    ## @param hdp.logCollection.outputs Fluent Bit output configuration injected verbatim into the pipeline.
+    ##   Supports any Fluent Bit output plugin. Refer to https://docs.fluentbit.io/manual/pipeline/outputs.
+    ##   Use the YAML list format (each entry is a map of Fluent Bit output properties).
+    ##   Must be provided — log collection will not function without at least one output.
+    ## @example OpenTelemetry output:
+    ##   outputs:
+    ##     - name: opentelemetry
+    ##       match: "*"
+    ##       host: otel-collector-opentelemetry-collector
+    ##       port: 4318
+    ##       tls: off
+    ##       tls.verify: off
+    ##       logs_body_key: message
+    ##       retry_limit: false
+    ##       storage.total_limit_size: 200MB
+    ## @example Loki output:
+    ##   outputs:
+    ##     - name: loki
+    ##       match: "*"
+    ##       host: loki.default.svc.cluster.local
+    ##       port: 3100
+    ##       labels: job=fluent-bit
+    ## @example Elasticsearch output:
+    ##   outputs:
+    ##     - name: es
+    ##       match: "*"
+    ##       host: elasticsearch.default.svc.cluster.local
+    ##       port: 9200
+    ##       index: hdp-logs
+    ## @example Splunk HEC output:
+    ##   outputs:
+    ##     - name: splunk
+    ##       match: "*"
+    ##       host: splunk.default.svc.cluster.local
+    ##       port: 8088
+    ##       splunk_token: "<your-hec-token>"
+    ## @example File DLQ (incident triage only — mirrors all records to disk):
+    ##   outputs:
+    ##     - name: file
+    ##       match: "*"
+    ##       path: /var/lib/fluent-bit/dlq
+    ##       file: hdp-dlq.log
+    ##       format: plain
+    ##       storage.total_limit_size: 1G
+    ## @example stdout (local debugging only):
+    ##   outputs:
+    ##     - name: stdout
+    ##       match: "*"
+    ##       format: json_lines
+    ##
+    ## Required when logCollection.enabled is true — at least one output must be configured.
+    ## Configure the desired Fluent Bit output below. Examples are provided above.
+    ## Ref: https://docs.fluentbit.io/manual/pipeline/outputs
+    ##
+    ## stdout is for local debugging only — it doubles log volume in production
+    ## by emitting every record to pod stdout in addition to the primary output.
+    ## Use: kubectl logs <pod> -c fluent-bit -n <namespace>
+    ##
+    outputs: []
+
   ## @param hdp.containerSecurityContext.readOnlyRootFilesystem The parameter for setting the root filesystem as read-only
   ## @param hdp.containerSecurityContext.runAsNonRoot The parameter for running the container as a non-root user
   ##
@@ -142,16 +398,23 @@ hdp:
   ## @param hdp.resources.requests.cpu The minimum CPU for the server container
   ## @param hdp.resources.limits.memory The maximum RAM for the server container
   ## @param hdp.resources.limits.cpu The maximum CPU for the server container
-  ## @note For memory, values must be specified in Mi (Mebibytes) or Gi (Gibibytes). For example, 4096Mi or 4Gi.
-  ## @note For CPU, values must be specified in millicores (m) or whole cores. For example, 2000m or 2.
+  ## @note Any valid Kubernetes resource quantity is accepted. For memory: 512Mi, 4Gi, 2G, 1.5Gi. For CPU: 500m, "2", "0.5".
+  ## @note Kubernetes validates resource quantities at apply time and will reject invalid values with a clear error.
   ## 
   resources:
     requests:
       memory: 4096Mi
       cpu: 2000m
     limits:
-      memory: 4096Mi
+      memory: 6144Mi
       cpu: 2000m
+  ## @param hdp.jvmHeap.initial Initial JVM heap (-Xms) in megabytes. Whole numbers only. Default and minimum: 4096.
+  ## @param hdp.jvmHeap.max Maximum JVM heap (-Xmx) in megabytes. Must be >= initial. Set to ≤ 75-80% of limits.memory to avoid OOMKill.
+  ## @note Ref: https://docs.oracle.com/cd/E19159-01/819-3681/6n5srlhqp/index.html
+  ##
+  jvmHeap:
+    initial: 4096
+    max: 4096
   ## @param hdp.livenessProbe.enabled The parameter for enabling the container liveness probe
   ## @param hdp.livenessProbe.initialDelaySeconds The number of seconds after the container has started before the liveness probe is initiated
   ## @param hdp.livenessProbe.periodSeconds The frequency in seconds that Kubernetes performs the liveness check
@@ -209,6 +472,34 @@ hdp:
   ## @note Works together with affinity to provide complete pod scheduling control
   
   topologySpreadConstraints: []
+
+  ## @section Node Selector Configuration
+  ## @param hdp.nodeSelector Map of node labels for pod assignment
+  ## @note Schedules pods only on nodes matching all specified labels (exact match).
+  ## @note Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
+  ## @note vs affinity: nodeSelector is a simpler subset of nodeAffinity. Use nodeSelector for straightforward
+  ## @note label matching; use hdp.affinity for richer expressions or preferred (soft) scheduling rules.
+  ## @note When both are set, a node must satisfy BOTH to be eligible.
+  ## @example
+  ## nodeSelector:
+  ##   kubernetes.io/os: linux
+  ##   disktype: ssd
+  
+  nodeSelector: {}
+  
+  ## @param hdp.extraEnvVars Additional environment variables to be added to the HDP server container
+  ## @note Allows you to inject custom environment variables into the HDP server pod
+  ## @example
+  ## extraEnvVars:
+  ##   - name: MY_CUSTOM_VAR
+  ##     value: "my_value"
+  ##   - name: MY_SECRET_VAR
+  ##     valueFrom:
+  ##       secretKeyRef:
+  ##         name: my-secret
+  ##         key: my-key
+  ##
+  extraEnvVars: []
   
   ## @param hdp.services.hdpService.name The name of the Hybrid Data Pipeline service
   ## @param hdp.services.hdpService.check The parameter for enabling a health check against the server
@@ -233,6 +524,74 @@ hdp:
       check: true
       checkInterval: 5m
       checkPath: /api/healthcheck
+      ## @param hdp.services.hdpService.headless.enabled Controls the external access topology.
+      ## @note The headless Service Kubernetes object is ALWAYS rendered by this chart regardless
+      ## of this flag — it is required by Kubernetes so that each StatefulSet pod receives a
+      ## stable per-pod DNS record (<pod>.<headlessSvc>.<ns>.svc.cluster.local).
+      ## This flag selects the *external* routing topology:
+      ##   false (default) — Ingress controller handles external access (hdpingressconfiguration).
+      ##   true            — An upstream gateway routes traffic directly to per-pod DNS records;
+      ##                     the Ingress resource is not used.
+      ## @note Cannot be set to true while hdp.hdpingressconfiguration.enabled is also true.
+      ## The chart will fail at render time with an explicit error message if both are set.
+      ## @note Default is false; existing deployments are unaffected.
+      ##
+      ## Ports exposed by the headless Service (values from hdp.ports.*):
+      ##   hdpServer        hdp.ports.hdpServer.port         (default 8080)  — HDP REST API / UI
+      ##   opAccessor       hdp.ports.opAccessor.port        (default 40501) — On-Premises Connector
+      ##   notificationServer hdp.ports.notificationServer.port (default 11280) — Notification Server
+      ##   internal-api     8190 (fixed)                     — Internal cluster API; not for external use
+      ##
+      ## The following items are NOT provided by this chart in headless mode and must be
+      ## configured in the upstream gateway or infrastructure:
+      ##   - TLS termination / certificate management
+      ##   - Sticky-session cookies
+      ##   - Public hostname / DNS registration
+      ##   - Web-application firewall (WAF) rules
+      ##
+      ## Upgrade path — switching from Ingress mode to headless mode:
+      ##   1. Prerequisites: quiesce active user sessions; have the upstream gateway ready.
+      ##   2. Values change:
+      ##        hdp.services.hdpService.headless.enabled: true
+      ##        hdp.hdpingressconfiguration.enabled: false
+      ##        hdp.hdpingressconfiguration.agic.enabled: false   # (or haproxy, whichever is set)
+      ##   3. Expected pod churn: none — pods are NOT restarted. Only the Ingress resource is
+      ##      removed and NOTES.txt output changes. The StatefulSet spec is unchanged.
+      ##   4. Rollback: reverse the values above and re-run helm upgrade. No pod restart occurs.
+      ##   5. Post-upgrade verification:
+      ##        kubectl get ingress -n <namespace>       # expect: No resources found
+      ##        kubectl get svc -n <namespace>           # confirm headless Service present
+      ##        nslookup <pod>.<headlessSvc>.<ns>.svc.cluster.local
+      ##
+      ## @param hdp.services.hdpService.headless.nameOverride Override the default headless Service name (defaults to "<release>-<hdpService.name>-headless")
+      ## @note Kubernetes allows any Service as spec.serviceName, but only a headless Service
+      ## (clusterIP: None) gives each StatefulSet pod a stable per-pod DNS hostname of the form
+      ## `<pod>.<headlessSvc>.<ns>.svc.cluster.local`. Without a headless Service the pods have
+      ## no stable per-pod network identity. This chart always renders the headless Service for
+      ## that reason.
+      ## @note StatefulSet.spec.serviceName is immutable. Changing `nameOverride` on an existing
+      ## release will require recreating the StatefulSet (e.g. `kubectl delete sts ... --cascade=orphan`
+      ## then `helm upgrade`) to take effect.
+      ## @note Refer to: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#stable-network-id
+      ##
+      headless:
+        enabled: false
+        nameOverride: ""
+    ## Per-ordinal OPA Services
+    ## For each replica i (0 … replicaCount-1) the chart renders a dedicated
+    ## Service named  <release>-<opAccessorService.name>-<i>  (e.g. "hdp-opaccessor-0").
+    ## Each Service carries the selector:
+    ##   statefulset.kubernetes.io/pod-name: <release>-hdpserver-<i>
+    ## so that OPC traffic for ordinal N lands on pod N deterministically,
+    ## with no round-robin across replicas (HDP-14962).
+    ##
+    ## Gateway / load-balancer wiring: register one backend-pool entry per
+    ## ordinal using the Service names above.  When replicaCount is reduced
+    ## (scale-in) the
+    ## orphaned Services (ordinals ≥ new count) are NOT automatically removed
+    ## by Kubernetes — run `kubectl delete svc <release>-opaccessor-<i>` for
+    ## each dropped ordinal, or perform a `helm upgrade` which will reconcile
+    ## the rendered manifest and remove them.
     opAccessorService:
       name: opaccessor
       check: true
@@ -310,6 +669,7 @@ hdp:
 ##
 postgresql:
   ## @param architecture PostgreSQL architecture (`standalone` or `replication`), Default: `standalone`
+  ## @note Default `standalone` is a simple baseline. For production resilience, explicitly evaluate `replication` with PodDisruptionBudget and scheduling spread controls.
   ##
   architecture: standalone
   ## Replication configuration
@@ -464,6 +824,7 @@ postgresql:
   ## @param postgresql.image.tag The PostgreSQL image tag (immutable tags are recommended)
   ## @param postgresql.image.digest The PostgreSQL image digest. For example, sha256:aa.... Please note that this parameter, if set, will override the tag.
   ## @param postgresql.image.pullPolicy The PostgreSQL image pull policy
+  ## @note SECURITY: Review and update public image sources to customer-approved registries and use digest pinning in production.
   ##
   image:
     registry: docker.io  # SECURITY: Use trusted registry for production (AVD-KSV-0125)
@@ -589,9 +950,17 @@ postgresql:
         memory: 8Gi
     containerSecurityContext:
       enabled: true
+      seLinuxOptions: {}
       runAsNonRoot: true
       runAsUser: 12321
       runAsGroup: 12321
+      privileged: false
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: "RuntimeDefault"
     ## @section PostgreSQL PodDisruptionBudget Configuration
     ## @param postgresql.primary.pdb.create Whether to create a PodDisruptionBudget for PostgreSQL primary instance
     ## @param postgresql.primary.pdb.minAvailable The minimum number or percentage of PostgreSQL pods that must remain available during voluntary disruptions

@@ -1,0 +1,497 @@
+# ════════════════════════════════════════════════════════════════
+# HDP Fluent Bit Configuration — fluent-bit.yaml
+# ════════════════════════════════════════════════════════════════
+#
+# Helm chart template rendered at deploy time.
+# Deployment model: Helm/K8s sidecar — one Fluent Bit per HDP pod.
+# Helm template expressions are resolved at `helm install/upgrade`.
+# Runtime env vars (${VAR}) are resolved by the container at startup.
+#
+# Comment-separator convention (P3-28):
+#   ═══ borders fence top-level / pipeline-stage sections.
+#   ─── borders fence individual blocks (one input, one filter,
+#       one parser). Don't mix levels.
+#
+# Path Strategy (per-pod FQDN scoping on shared RWX PVC):
+#   Each Fluent Bit sidecar reads only its own pod's log subdirectory:
+#     ${HDP_LOG_BASE}/<comp>/*
+#   where HDP_LOG_BASE = <mountPath>/<HDP_POD_FQDN>
+#   e.g. /logs/hdp-deploy-hdpserver-0.hdp-deploy-hdpserver.hdp.svc.cluster.local
+#   This ensures sidecars on a shared RWX PVC never cross-read another pod's logs.
+#
+# Environment Variables:
+#   HDP_LOG_BASE          — Per-pod root log directory (<mountPath>/<HDP_POD_FQDN>)
+#   HDP_POD_FQDN          — Full DNS name of this pod (e.g. pod-0.svc.ns.svc.cluster.local)
+#   POD_NAME              — Pod name from Downward API (metadata.name)
+#   POD_NAMESPACE         — Pod namespace from Downward API (metadata.namespace)
+#   HDP_HEADLESS_SVC      — Headless service name for FQDN construction
+#   FB_CONFIG_DIR         — Fluent Bit config directory
+#   FB_DB_DIR             — Fluent Bit offset DB directory
+#   DEPLOYMENT_ENV        — Environment identifier
+#   HDP_VERSION           — Product version
+#   HDP_BUILD             — Build number
+#   READ_FROM_HEAD        — true/false
+#   FB_HTTP_SERVER        — on/off
+#   FB_MAX_CHUNKS         — storage.max_chunks_up
+#
+#   FB_LOG_LEVEL          — log verbosity (default: info). Set by statefulset from
+#                          .Values.hdp.logCollection.fluentbit.logLevel. Can be
+#                          overridden at runtime via logCollection.extraEnvVars.
+#   TIME_OFFSET           — ±HHMM offset for tz-less JVM timestamps
+#                          (consumed by parsers.conf)
+#   LC_ALL / LANG         — MUST be `C` (P1-7); set as env vars in
+#                          statefulset.yaml (K8s) or entrypoint (Docker)
+#   FB_DLQ_PATH           — (P2-17) opt-in path for the file DLQ
+#                          fallback output. Unset = no DLQ.
+#   DAS_THROTTLE_RATE     — (P2-25) records/window cap on hdp.das.*;
+#                          enable by uncommenting the throttle filter.
+#
+# Hard constraints:
+#   service.workers       — MUST stay 1 (P1-11/P2-22). Lua caches
+#                          and per-host counters live in per-worker
+#                          state; multiple workers would desync
+#                          cluster_cache and deploy_ts_cache.
+#
+# Tag taxonomy (P2-24, refined P3-31):
+#   Tags are bare (no trailing `.*`). Each tail input emits one
+#   logical stream; per-file provenance is carried by `_file`
+#   (path_key), so wildcard-tag-per-file is unnecessary churn for
+#   downstream routing.
+#
+#   tag                       component       service.name   parsers / filters
+#   ----------------------    ------------    -----------    -----------------------------
+#   hdp.das                   das             hdp-server     hdp_juli + redact_saml_tokens
+#   hdp.tomcat                tomcat          hdp-server     hdp_juli
+#   hdp.access                access          hdp-server     hdp_access_log
+#   hdp.notification          notification    hdp-server     hdp_juli + multiline
+#   hdp.shutdown              shutdown        hdp-server     hdp_juli + redact_passwords
+#   hdp.catalina_out          catalina_out    hdp-server     springboot parser + redact
+#   hdp.hdpui                 hdpui           hdp-server     hdp_hdpui
+#   hdp.install.deploy        install         hdp-server     enrich_deploy_log + redact
+#   hdp.install.error         install         hdp-server     enrich_error_log
+#   hdp.install.final         install         hdp-server     enrich_final_log
+#   hdp.install.schema        install         hdp-server     hdp_juli + multiline
+#   hdp.install.debug         install         hdp-server     redact_secrets (bash set -x trace)
+#   hdp.opc.accessor          opc-accessor    hdp-opc        hdp_juli + redact_opc_tokens
+#   hdp.opc.das               opc-das         hdp-opc        hdp_juli + redact_opc_tokens
+#   hdp.opc.tomcat            opc-tomcat      hdp-opc        hdp_juli + redact_opc_tokens
+#   hdp.opc.procrun           opc-procrun     hdp-opc        hdp_opc_procrun + redact
+#
+# See DESIGN-PROPOSAL-Centralized-Logging.md Section 9.3.
+# ════════════════════════════════════════════════════════════════
+
+service:
+  flush: 2
+  grace: 30
+  workers: 1  # MUST stay 1 — Lua caches and per-host counters are per-worker state
+  # Runtime env var injected by statefulset.yaml from .Values.hdp.logCollection.fluentbit.logLevel
+  # (default: info). Can be overridden without helm upgrade via logCollection.extraEnvVars:
+  #   - name: FB_LOG_LEVEL
+  #     value: debug
+  log_level: ${FB_LOG_LEVEL}
+  http_server: "${FB_HTTP_SERVER}"
+  http_listen: 0.0.0.0
+  http_port: {{ .Values.hdp.logCollection.fluentbit.httpPort | default 2020 }}
+  parsers_file: ${FB_CONFIG_DIR}/parsers.conf
+  storage.path: ${FB_DB_DIR}/
+  storage.sync: normal
+  storage.checksum: "off"
+  storage.max_chunks_up: ${FB_MAX_CHUNKS}
+
+# ── INPUTS ──────────────────────────────────────────────────────
+
+pipeline:
+  inputs:
+    # ══════════════════════════════════════════════════════════
+    # SERVER INPUTS
+    # ══════════════════════════════════════════════════════════
+    # Each input reads from its per-pod scoped path via
+    # ${HDP_LOG_BASE}/<component>/* where HDP_LOG_BASE resolves
+    # to <mountPath>/<HDP_POD_FQDN> — isolating each sidecar to
+    # its own pod's subdirectory on the shared RWX PVC.
+    # ══════════════════════════════════════════════════════════
+
+    # ── DAS Core, Category & Session Logs ──────────────────────
+    # Captures ALL .log files in das/, including dynamically-named
+    # session logs: [tenant][user][datastore][datasource].YYYY-MM-DD.log
+    # fnmatch() treats brackets as literal when they don't form a
+    # valid character class.  Tune refresh_interval for high
+    # session-log counts (hundreds in production).
+    #
+    # DAS_EXCLUDE_PATH: Optional comma-separated glob list of DAS files
+    # to exclude. Default is empty (all DAS logs collected).
+    # To exclude high-volume diagnostic logs (clouddb, filter, meter),
+    # set DAS_EXCLUDE_PATH in the deployment .env file.
+    # See .env.example for a ready-to-use exclude list.
+    # Dashboards can also filter these by hdp.log_type without excluding
+    # at ingest (clouddb/filter/meter are classified by enrich.lua).
+    - name: tail
+      tag: hdp.das
+      # P2-23: each input takes its `path:` from a single env var so
+      # deployment models can override the path set without editing
+      # the universal YAML. Defaults to the triple-depth glob form
+      # (standalone-flat / Docker-K8s / dual-FQDN), exported by
+      # scripts/fluent-bit-entrypoint.sh from HDP_LOG_BASE.
+      path: ${HDP_LOG_DAS_PATHS}
+      exclude_path: ${DAS_EXCLUDE_PATH}
+      multiline.parser: hdp_java_stacktrace
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      rotate_wait: 5
+      path_key: _file
+      db: ${FB_DB_DIR}/das.db
+      db.sync: normal
+      mem_buf_limit: 50MB
+      storage.type: filesystem
+      skip_long_lines: "on"
+      skip_empty_lines: "on"
+
+    # ── Tomcat Logs (catalina, localhost — JULI format) ────────
+    - name: tail
+      tag: hdp.tomcat
+      path: ${HDP_LOG_TOMCAT_PATHS}
+      exclude_path: ${HDP_LOG_TOMCAT_EXCLUDE_PATHS}
+      multiline.parser: hdp_java_stacktrace
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/tomcat.db
+      mem_buf_limit: 20MB
+      storage.type: filesystem
+
+    # ── Tomcat Access Log ──────────────────────────────────────
+    - name: tail
+      tag: hdp.access
+      path: ${HDP_LOG_ACCESS_PATHS}
+      parser: hdp_access_log
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/access.db
+      mem_buf_limit: 50MB
+      storage.type: filesystem
+
+    # ── catalina.out (JULI / Spring Boot 3.x / 2.x / raw) ────
+    - name: tail
+      tag: hdp.catalina_out
+      path: ${HDP_LOG_CATALINA_OUT_PATHS}
+      multiline.parser: hdp_catalina_out_multiline
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/catalina_out.db
+      mem_buf_limit: 30MB
+      storage.type: filesystem
+      skip_long_lines: "on"
+
+    # ── shutdown.log — SECURITY: contains cleartext passwords ──
+    # Tailed separately to apply mandatory password redaction.
+    - name: tail
+      tag: hdp.shutdown
+      path: ${HDP_LOG_SHUTDOWN_PATHS}
+      multiline.parser: hdp_java_stacktrace
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/shutdown.db
+      mem_buf_limit: 2MB
+      storage.type: filesystem
+
+    # ── HDPUI ────────────────────────────────────────────
+    - name: tail
+      tag: hdp.hdpui
+      path: ${HDP_LOG_HDPUI_PATHS}
+      multiline.parser: hdp_hdpui_stacktrace
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/hdpui.db
+      mem_buf_limit: 5MB
+      storage.type: filesystem
+
+    # ── Notification/Palette ───────────────────────────────────
+    - name: tail
+      tag: hdp.notification
+      path: ${HDP_LOG_NOTIFICATION_PATHS}
+      multiline.parser: hdp_java_stacktrace
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/notification.db
+      mem_buf_limit: 20MB
+      storage.type: filesystem
+
+    # ══════════════════════════════════════════════════════════
+    # INSTALL INPUTS
+    # ══════════════════════════════════════════════════════════
+    # Populated during initial HDP deployment.  One-time files —
+    # read_from_head follows the global ${READ_FROM_HEAD} setting.
+    # ══════════════════════════════════════════════════════════
+
+    # install/deploy.log — mixed shell + Java US-locale two-line records
+    # SECURITY: Contains cleartext keystore passwords in JAVA_OPTS dump.
+    # NOTE: No multiline parser — the Lua enrich_deploy_log() function
+    # handles timestamp/source/level extraction line-by-line, avoiding
+    # the multiline parser's tendency to silently drop records for
+    # hosts with long directory names.
+    - name: tail
+      tag: hdp.install.deploy
+      path: ${HDP_LOG_INSTALL_DEPLOY_PATHS}
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/install_deploy.db
+      mem_buf_limit: 5MB
+      storage.type: filesystem
+
+    # install/error.log — unstructured keytool certificate import output
+    - name: tail
+      tag: hdp.install.error
+      path: ${HDP_LOG_INSTALL_ERROR_PATHS}
+      multiline.parser: hdp_java_stacktrace
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/install_error.db
+      mem_buf_limit: 2MB
+      storage.type: filesystem
+
+    # install/final.log + schema_create_log.txt — deployment status
+    - name: tail
+      tag: hdp.install.final
+      path: ${HDP_LOG_INSTALL_FINAL_PATHS}
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/install_final.db
+      mem_buf_limit: 1MB
+      storage.type: filesystem
+
+    # install/hdpCloudSchema.YYYY-MM-DD.log — JULI format
+    # Leader pod produces ~286 KB; follower pods produce ~23 KB.
+    - name: tail
+      tag: hdp.install.schema
+      path: ${HDP_LOG_INSTALL_SCHEMA_PATHS}
+      multiline.parser: hdp_java_stacktrace
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/install_schema.db
+      mem_buf_limit: 5MB
+      storage.type: filesystem
+
+    # install/debug.log — bash set -x trace output; no timestamps; raw lines.
+    # SECURITY: Contains plaintext secrets (*_KEY, *_PASS, HMAC_KEY etc).
+    # Mandatory redact_secrets filter applies UNIVERSAL_PATTERNS incl. *_KEY/*_PASS/*_TOKEN.
+    - name: tail
+      tag: hdp.install.debug
+      path: ${HDP_LOG_INSTALL_DEBUG_PATHS}
+      read_from_head: ${READ_FROM_HEAD}
+      refresh_interval: 10
+      path_key: _file
+      db: ${FB_DB_DIR}/install_debug.db
+      mem_buf_limit: 5MB
+      storage.type: filesystem
+  filters:
+    # ── Server Parser Filters ──────────────────────────────────
+
+    # Parse DAS logs (JULI with source)
+    - name: parser
+      match: hdp.das
+      key_name: log
+      parser: hdp_juli
+      preserve_key: true
+      reserve_data: true
+
+    # Parse Tomcat logs (JULI with source)
+    - name: parser
+      match: hdp.tomcat
+      key_name: log
+      parser: hdp_juli
+      preserve_key: true
+      reserve_data: true
+
+    # Parse HDPUI logs
+    - name: parser
+      match: hdp.hdpui
+      key_name: log
+      parser: hdp_hdpui
+      preserve_key: true
+      reserve_data: true
+
+    # Parse Notification logs (JULI without source)
+    - name: parser
+      match: hdp.notification
+      key_name: log
+      parser: hdp_juli_short
+      preserve_key: true
+      reserve_data: true
+
+    # Parse install/hdpCloudSchema logs (JULI with source)
+    - name: parser
+      match: hdp.install.schema
+      key_name: log
+      parser: hdp_juli
+      preserve_key: true
+      reserve_data: true
+
+    # NOTE: No parser filter for hdp.install.deploy.
+    # All deploy.log parsing (timestamp, source, level, message) is
+    # handled by the Lua enrich_deploy_log() function, which avoids
+    # the multiline-assembled regex silently dropping records.
+
+    # Parse catalina.out — try JULI, then Spring Boot 3.x, then 2.x
+    - name: parser
+      match: hdp.catalina_out
+      key_name: log
+      parser: hdp_juli_short
+      preserve_key: true
+      reserve_data: true
+    - name: parser
+      match: hdp.catalina_out
+      key_name: log
+      parser: hdp_catalina_out_springboot
+      preserve_key: true
+      reserve_data: true
+    - name: parser
+      match: hdp.catalina_out
+      key_name: log
+      parser: hdp_catalina_out_springboot_legacy
+      preserve_key: true
+      reserve_data: true
+    {{- if .Values.hdp.logCollection.extraRecordFields }}
+    # ── Customer record fields (extraRecordFields) ──────────────
+    # Stamps static key-value pairs on every log record via a modify filter.
+    # Applied BEFORE platform fields. The platform modify filter below uses
+    # unconditional `set`, so it overwrites any platform keys (hdp.cluster,
+    # hdp.image_tag, deployment.environment, etc.) a customer key shares.
+    # service.name is the only exception: Lua sets it only when absent, so a
+    # customer value for service.name set here will persist unchanged.
+    #
+    # NOTE on downstream visibility (OTel → Loki pipeline):
+    # Fields whose keys are listed in loki.attribute.labels in the OTel
+    # collector config are PROMOTED to Loki stream labels and removed from
+    # the log body. They appear as label pills in Grafana (not as JSON
+    # attributes) and must be queried in stream selectors, e.g.:
+    #   {org_team="platform-sre"}   (dots replaced with underscores by Loki)
+    # Fields NOT in loki.attribute.labels remain in the log body as usual.
+    - name: modify
+      match: "*"
+      set:
+        {{- range $k, $v := .Values.hdp.logCollection.extraRecordFields }}
+        - {{ $k }} {{ $v }}
+        {{- end }}
+    {{- end }}
+
+    - name: modify
+      match: "*"
+      # P2-18 FIX: dropped `service.name hdp-server` — the Lua filter
+      # `enrich_with_hostname` always sets service.name (hdp-server
+      # for server records, hdp-opc for OPC). Setting it here too
+      # made filter ordering load-bearing: any future reordering
+      # could revert OPC records to hdp-server. Single source of
+      # truth is the Lua filter.
+      set:
+        - deployment.environment ${DEPLOYMENT_ENV}
+        - service.version ${HDP_VERSION}
+        - hdp.image_tag ${HDP_BUILD}
+        - hdp.cluster ${HDP_CLUSTER}
+        - kubernetes.namespace_name ${POD_NAMESPACE}
+
+    # ── Lua Enrichment ─────────────────────────────────────────
+    # Adds hostname, component, service.name, severity_number
+    - name: lua
+      match: "*"
+      script: ${FB_CONFIG_DIR}/enrich.lua
+      call: enrich_with_hostname
+
+    # Strip pipeline-internal fields post-enrichment — not query-relevant in Loki
+    # _file: used by Lua for hostname extraction; ~120 bytes, not needed downstream
+    # fluent.tag: OTLP auto-export of internal tag; duplicated by hdp.component
+    - name: record_modifier
+      match: "*"
+      remove_key:
+        - _file
+        - fluent.tag
+
+    # ── Redaction Filters (Security — MANDATORY) ──────────────
+
+    # P1-15 FIX: Universal redaction — applies UNIVERSAL_PATTERNS
+    # (passwords, secrets, tokens, JWTs, AWS keys, JDBC creds,
+    # Authorization headers, *_PASS / *_TOKEN / *_KEY env vars) to
+    # every record before component-specific redactors run. Closes
+    # the gap where DAS, hdpui, install schema, and access logs
+    # could leak credentials from stack traces or query strings.
+    - name: lua
+      match: "*"
+      script: ${FB_CONFIG_DIR}/redact.lua
+      call: redact_secrets
+
+    # Redact SAML tokens (long base64 strings) in DAS logs
+    - name: lua
+      match: hdp.das
+      script: ${FB_CONFIG_DIR}/redact.lua
+      call: redact_saml_tokens
+
+    # Redact Auth/AuthKey hex tokens, API keys, session cookies, and
+    # registrationKey values from OPC components (P0-5 fix: was never
+    # wired previously — OPC auth tokens shipped in cleartext).
+    # NOTE: OPC inputs (hdp.opc.*) are NOT provided by this K8s sidecar config.
+    # These filters are pre-wired and become active only when OPC inputs are
+    # injected via hdp.logCollection.extraFilters by on-premise OPC deployments
+    # that share the same RWX PVC. No-op otherwise.
+    - name: lua
+      match: hdp.opc.accessor
+      script: ${FB_CONFIG_DIR}/redact.lua
+      call: redact_opc_tokens
+    - name: lua
+      match: hdp.opc.das
+      script: ${FB_CONFIG_DIR}/redact.lua
+      call: redact_opc_tokens
+    - name: lua
+      match: hdp.opc.tomcat
+      script: ${FB_CONFIG_DIR}/redact.lua
+      call: redact_opc_tokens
+    - name: lua
+      match: hdp.opc.procrun
+      script: ${FB_CONFIG_DIR}/redact.lua
+      call: redact_opc_tokens
+
+    {{- if .Values.hdp.logCollection.extraFilters }}
+    # ── Customer filter extensions (extraFilters) ─────────────────
+    # Injected AFTER all mandatory HDP redaction filters. Customer filters
+    # may add or replace fields; the post-extraFilters redaction pass below
+    # ensures no secret introduced by a customer filter reaches any output.
+    {{- toYaml .Values.hdp.logCollection.extraFilters | nindent 4 }}
+
+    # ── Post-extraFilters redaction pass (defense at egress) ──────
+    # Mandatory: re-runs universal redaction after customer filters.
+    # Prevents accidental secret leakage if extraFilters rewrites
+    # message/log with unredacted values. Zero overhead when
+    # extraFilters is empty (this entire block is not rendered).
+    - name: lua
+      match: "*"
+      script: ${FB_CONFIG_DIR}/redact.lua
+      call: redact_secrets
+    {{- end }}
+
+    # ── Throttle (P2-25, opt-in) ──────────────────────────────
+    # High-volume DAS session logs can saturate Loki ingest in
+    # busy environments. Uncomment and tune DAS_THROTTLE_RATE
+    # (records per minute window) to enable rate limiting on
+    # hdp.das. Leave commented out for unrestricted ingest.
+    # - name: throttle
+    #   match: hdp.das
+    #   rate: ${DAS_THROTTLE_RATE:-1000}
+    #   window: 60
+    #   interval: 1s
+    #   print_status: false
+  outputs:
+    # Configure outputs via hdp.logCollection.outputs in values.yaml.
+    # Supports any Fluent Bit output plugin: https://docs.fluentbit.io/manual/pipeline/outputs
+    # Examples: OpenTelemetry, Loki, Elasticsearch, Splunk, Kafka, S3, stdout.
+    {{- if .Values.hdp.logCollection.outputs }}
+    {{- toYaml .Values.hdp.logCollection.outputs | nindent 4 }}
+    {{- else }}
+    {{- fail "hdp.logCollection.outputs must be configured with at least one Fluent Bit output. See values.yaml for examples." }}
+    {{- end }}

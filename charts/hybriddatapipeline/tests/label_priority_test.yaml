@@ -262,7 +262,6 @@ tests:
   - it: should prioritize logging configmap labels over common labels
     template: logging-properties-configmap.yaml
     set:
-      hdp.persistence.logs.enabled: true
       hdp.commonLabels:
         log-level: "info"
         log-format: "text"
@@ -387,7 +386,7 @@ tests:
           path: metadata.labels["min-available"]
           value: "2"
 
-  - it: should prioritize secret labels over common labels
+  - it: should prioritize config labels over common labels
     template: postgres-init-sql.yaml
     set:
       hdp.database.postgres.enabled: true
@@ -395,11 +394,14 @@ tests:
         security-level: "standard"
         encryption: "at-transit"
         key-management: "manual"
-      hdp.secretLabels:
+      hdp.configLabels:
         security-level: "high"
         data-classification: "confidential"
         encryption: "at-rest"
     asserts:
+      # BI-01 fix: postgres-init is now a ConfigMap (no credentials in manifest)
+      - isKind:
+          of: ConfigMap
       # Standard labels preserved
       - equal:
           path: metadata.labels["app.kubernetes.io/name"]
@@ -408,13 +410,36 @@ tests:
       - equal:
           path: metadata.labels["key-management"]
           value: "manual"
-      # Secret-specific labels override common
+      # Config-specific labels override common
       - equal:
           path: metadata.labels["security-level"]
           value: "high"
       - equal:
           path: metadata.labels["data-classification"]
           value: "confidential"
+      - equal:
+          path: metadata.labels["encryption"]
+          value: "at-rest"
+
+  - it: should ignore secret labels when config labels are provided
+    template: postgres-init-sql.yaml
+    set:
+      hdp.database.postgres.enabled: true
+      hdp.commonLabels:
+        security-level: "standard"
+        encryption: "at-transit"
+      hdp.secretLabels:
+        security-level: "legacy-secret"
+        data-classification: "confidential"
+      hdp.configLabels:
+        security-level: "high"
+        encryption: "at-rest"
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.labels["security-level"]
+          value: "high"
       - equal:
           path: metadata.labels["encryption"]
           value: "at-rest"

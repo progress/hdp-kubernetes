@@ -1,26 +1,38 @@
 {{- if .Values.hdp.database.postgres.enabled }}
-# Creates the initial script to setup the PostgreSQL Database for HDP as an external Account Database
-# Expects the secrets to be created prior to setup this secret 
+# Creates the initial script to set up the PostgreSQL Database for HDP as an external Account Database.
+# DB user credentials (HDP_ADMIN_PG_USERNAME/USERPWD and HDP_USER_PG_USERNAME/USERPWD) are resolved
+# at runtime from hdp-secrets via environment variables injected into the postgres-db-init init
+# container — no render-time lookup is performed here. This prevents credential duplication into
+# chart-rendered manifests and the Helm release Secret.
 apiVersion: v1
-kind: Secret
+kind: ConfigMap
 metadata:
-  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.secretLabels "context" .) | nindent 4 }}
-  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.secretAnnotations "context" .) | nindent 4 }}
+  labels: {{- include "hdp.labels.merge" (dict "commonLabels" .Values.hdp.commonLabels "specificLabels" .Values.hdp.configLabels "context" .) | nindent 4 }}
+  annotations: {{- include "hdp.annotations.merge" (dict "commonAnnotations" .Values.hdp.commonAnnotations "specificAnnotations" .Values.hdp.configAnnotations "context" .) | nindent 4 }}
   name: {{ include "hybriddatapipeline.fullname" . }}-postgres-init
-stringData:
+data:
   init.sh: |-
     set -e
     echo "Using PostgreSQL connection: $PGHOST:$PGPORT"
     echo "PGPASSWORD is set: $([ -n "$PGPASSWORD" ] && echo "yes" || echo "no")"
     
+    # Normalize database credentials: strip CR/LF that may be present from secret encoding
+    # Handles cases where base64 encoding included trailing newlines (e.g., using 'echo' instead of 'echo -n')
+    # Use printf instead of echo to safely handle values that start with - or contain backslashes
+    HDP_ADMIN_PG_USERNAME=$(printf '%s' "$HDP_ADMIN_PG_USERNAME" | tr -d '\r\n')
+    HDP_ADMIN_PG_USERPWD=$(printf '%s' "$HDP_ADMIN_PG_USERPWD" | tr -d '\r\n')
+    HDP_USER_PG_USERNAME=$(printf '%s' "$HDP_USER_PG_USERNAME" | tr -d '\r\n')
+    HDP_USER_PG_USERPWD=$(printf '%s' "$HDP_USER_PG_USERPWD" | tr -d '\r\n')
+    
+    # Validate that all required database credentials are present (fail fast with clear error)
+    [ -z "$HDP_ADMIN_PG_USERNAME" ] && { echo "ERROR: HDP_ADMIN_PG_USERNAME is empty or missing from hdp-secrets" >&2; exit 1; }
+    [ -z "$HDP_ADMIN_PG_USERPWD" ] && { echo "ERROR: HDP_ADMIN_PG_USERPWD is empty or missing from hdp-secrets" >&2; exit 1; }
+    [ -z "$HDP_USER_PG_USERNAME" ] && { echo "ERROR: HDP_USER_PG_USERNAME is empty or missing from hdp-secrets" >&2; exit 1; }
+    [ -z "$HDP_USER_PG_USERPWD" ] && { echo "ERROR: HDP_USER_PG_USERPWD is empty or missing from hdp-secrets" >&2; exit 1; }
+    
     # Database configuration
     HDP_PG_DB_NAME={{.Values.hdp.database.postgres.databaseName}}
     HDP_PG_DB_SCHEMA_NAME={{.Values.hdp.database.postgres.schemaName}}
-
-    HDP_ADMIN_PG_USERNAME='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "hdp-secrets" "key" "account-database-admin-username" "context" $) | trim }}'
-    HDP_ADMIN_PG_USERPWD='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "hdp-secrets" "key" "account-database-admin-password" "context" $) | trim }}'
-    HDP_USER_PG_USERNAME='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "hdp-secrets" "key" "account-database-user-username" "context" $) | trim }}'
-    HDP_USER_PG_USERPWD='{{ include "hybriddatapipeline.secretValue" (dict "secretName" "hdp-secrets" "key" "account-database-user-password" "context" $) | trim }}'
 
     psql -v ON_ERROR_STOP=1 --host $PGHOST --port $PGPORT --username $PGUSER --dbname $PGDATABASE <<-EOSQL
       create database $HDP_PG_DB_NAME;

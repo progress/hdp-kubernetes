@@ -1,0 +1,180 @@
+suite: hdp-headless-service
+templates:
+  - hdp-headless-service.yaml
+  - statefulset.yaml
+tests:
+  - it: should render the headless Service by default with clusterIP None
+    templates:
+      - hdp-headless-service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - isAPIVersion:
+          of: v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hdpserver-headless
+      - equal:
+          path: spec.clusterIP
+          value: None
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.publishNotReadyAddresses
+          value: true
+      - contains:
+          path: spec.ports
+          content:
+            name: hdpserver-port
+            port: 8080
+            protocol: TCP
+            targetPort: 8080
+      - contains:
+          path: spec.ports
+          content:
+            name: notification-port
+            port: 11280
+            protocol: TCP
+            targetPort: 11280
+      - contains:
+          path: spec.ports
+          content:
+            name: opaccessor-port
+            port: 40501
+            protocol: TCP
+            targetPort: 40501
+      - contains:
+          path: spec.ports
+          content:
+            name: internal-api-port
+            port: 8190
+            protocol: TCP
+            targetPort: 8190
+
+  - it: StatefulSet.spec.serviceName should reference the headless Service
+    templates:
+      - statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.serviceName
+          value: RELEASE-NAME-hdpserver-headless
+
+  - it: should honor nameOverride for the headless Service
+    set:
+      hdp.services.hdpService.headless.nameOverride: hdp-internal
+    templates:
+      - hdp-headless-service.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-hdp-internal
+
+  - it: StatefulSet.spec.serviceName should follow nameOverride
+    set:
+      hdp.services.hdpService.headless.nameOverride: hdp-internal
+    templates:
+      - statefulset.yaml
+    asserts:
+      - equal:
+          path: spec.serviceName
+          value: RELEASE-NAME-hdp-internal
+
+  # ---------------------------------------------------------------------------
+  # headless.enabled toggle — default off, no behavior change
+  # ---------------------------------------------------------------------------
+  - it: "headless.enabled default (false): StatefulSet renders without error"
+    templates:
+      - statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+
+  - it: "headless.enabled true without Ingress: StatefulSet renders without error"
+    set:
+      hdp.services.hdpService.headless.enabled: true
+      hdp.hdpingressconfiguration.enabled: false
+    templates:
+      - statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+
+  # ---------------------------------------------------------------------------
+  # Conflict guard: headless.enabled + hdpingressconfiguration.enabled must fail
+  # ---------------------------------------------------------------------------
+  - it: "guard: should fail when headless.enabled and hdpingressconfiguration.enabled are both true"
+    set:
+      hdp.services.hdpService.headless.enabled: true
+      hdp.hdpingressconfiguration.enabled: true
+    templates:
+      - statefulset.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "Configuration conflict: hdp.services.hdpService.headless.enabled: true cannot be combined with hdp.hdpingressconfiguration.enabled: true. The headless Service Kubernetes object is always present (required by the StatefulSet); hdp.services.hdpService.headless.enabled selects direct per-pod DNS as the external access topology, which conflicts with Ingress-based routing. Set hdp.hdpingressconfiguration.enabled: false to use direct per-pod routing, or set hdp.services.hdpService.headless.enabled: false to keep Ingress as the external access path."
+
+  - it: "guard: error message names both conflicting keys"
+    set:
+      hdp.services.hdpService.headless.enabled: true
+      hdp.hdpingressconfiguration.enabled: true
+    templates:
+      - statefulset.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "Configuration conflict: hdp.services.hdpService.headless.enabled: true cannot be combined with hdp.hdpingressconfiguration.enabled: true. The headless Service Kubernetes object is always present (required by the StatefulSet); hdp.services.hdpService.headless.enabled selects direct per-pod DNS as the external access topology, which conflicts with Ingress-based routing. Set hdp.hdpingressconfiguration.enabled: false to use direct per-pod routing, or set hdp.services.hdpService.headless.enabled: false to keep Ingress as the external access path."
+
+  - it: "guard: error message is silent when only Ingress is enabled (headless off)"
+    set:
+      hdp.services.hdpService.headless.enabled: false
+      hdp.hdpingressconfiguration.enabled: true
+    templates:
+      - statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+
+  # ── hdp.validate.logsStorageConflict guard tests ─────────────────
+
+  - it: "guard: should fail when persistence.logs.enabled and logCollection.enabled are both true"
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.logCollection.enabled: true
+    templates:
+      - statefulset.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "hdp.persistence.logs.enabled and hdp.logCollection.enabled cannot both be true. Set hdp.persistence.logs.enabled: false when log collection is active."
+
+  - it: "guard: should render when persistence.logs.enabled is true and logCollection.enabled is false"
+    set:
+      hdp.persistence.logs.enabled: true
+      hdp.logCollection.enabled: false
+    templates:
+      - statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+
+  - it: "guard: should render when persistence.logs.enabled is false and logCollection.enabled is true"
+    set:
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.enabled: true
+      hdp.logCollection.image.repository: "docker.io/fluent/fluent-bit"
+      hdp.logCollection.image.tag: "5.0.4"
+    templates:
+      - statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+
+  - it: "guard: should render when both persistence.logs.enabled and logCollection.enabled are false"
+    set:
+      hdp.persistence.logs.enabled: false
+      hdp.logCollection.enabled: false
+    templates:
+      - statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet

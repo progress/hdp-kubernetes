@@ -3,6 +3,9 @@ templates:
   - opa-service.yaml
 
 tests:
+  # ---------------------------------------------------------------------------
+  # R = 1: exactly one Service rendered, correct name, type, port, annotations
+  # ---------------------------------------------------------------------------
   - it: should render the service with ClusterIP and annotations when hdpingressconfiguration.agic.enabled is true
     set:
       hdp.hdpingressconfiguration.enabled: true
@@ -17,6 +20,8 @@ tests:
       hdp.ports.opAccessor.targetPort: 8080
       hdp.replicaCount: 1
     asserts:
+      - hasDocuments:
+          count: 1
       - isKind:
           of: Service
       - equal:
@@ -40,3 +45,113 @@ tests:
       - equal:
           path: metadata.annotations["appgw.ingress.kubernetes.io/backend-path-prefix"]
           value: "/opa_RELEASE-NAME-hdpserver-0"
+
+  - it: "R=1: single Service selector pins to pod-0"
+    set:
+      hdp.replicaCount: 1
+      hdp.onPremiseConnector.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.selector["statefulset.kubernetes.io/pod-name"]
+          value: RELEASE-NAME-hdpserver-0
+
+  # ---------------------------------------------------------------------------
+  # R = 2: exactly two Services; each EndpointSlice points to its own pod
+  # ---------------------------------------------------------------------------
+  - it: should pin per-ordinal OPA Service to a single HDP pod via statefulset.kubernetes.io/pod-name
+    set:
+      hdp.hdpingressconfiguration.enabled: true
+      hdp.hdpingressconfiguration.haproxy.enabled: false
+      hdp.hdpingressconfiguration.agic.enabled: true
+      hdp.replicaCount: 2
+      hdp.onPremiseConnector.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-opaccessor-1
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.selector["statefulset.kubernetes.io/pod-name"]
+          value: RELEASE-NAME-hdpserver-1
+
+  - it: "R=2: exactly two opaccessor Services are rendered"
+    set:
+      hdp.replicaCount: 2
+      hdp.onPremiseConnector.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: "R=2: opaccessor-0 selector pins to hdpserver-0"
+    set:
+      hdp.replicaCount: 2
+      hdp.onPremiseConnector.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-opaccessor-0
+    asserts:
+      - equal:
+          path: spec.selector["statefulset.kubernetes.io/pod-name"]
+          value: RELEASE-NAME-hdpserver-0
+
+  # ---------------------------------------------------------------------------
+  # R = 3: exactly three Services; ordinal 2 selector verified
+  # ---------------------------------------------------------------------------
+  - it: "R=3: exactly three opaccessor Services are rendered"
+    set:
+      hdp.replicaCount: 3
+      hdp.onPremiseConnector.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 3
+
+  - it: "R=3: opaccessor-2 selector pins to hdpserver-2"
+    set:
+      hdp.replicaCount: 3
+      hdp.onPremiseConnector.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-opaccessor-2
+    asserts:
+      - equal:
+          path: spec.selector["statefulset.kubernetes.io/pod-name"]
+          value: RELEASE-NAME-hdpserver-2
+
+  - it: "R=3: opaccessor-1 selector pins to hdpserver-1"
+    set:
+      hdp.replicaCount: 3
+      hdp.onPremiseConnector.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-opaccessor-1
+    asserts:
+      - equal:
+          path: spec.selector["statefulset.kubernetes.io/pod-name"]
+          value: RELEASE-NAME-hdpserver-1
+
+  # ---------------------------------------------------------------------------
+  # onPremiseConnector.enabled: false — no Services rendered at all
+  # ---------------------------------------------------------------------------
+  - it: "disabled: no opaccessor Services rendered when onPremiseConnector.enabled is false"
+    set:
+      hdp.onPremiseConnector.enabled: false
+      hdp.replicaCount: 3
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ---------------------------------------------------------------------------
+  # NodePort type when clusterType is not "cloud"
+  # ---------------------------------------------------------------------------
+  - it: should render NodePort type when hdpingressconfiguration.clusterType is not cloud
+    set:
+      hdp.hdpingressconfiguration.clusterType: onpremise
+      hdp.replicaCount: 1
+      hdp.onPremiseConnector.enabled: true
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort

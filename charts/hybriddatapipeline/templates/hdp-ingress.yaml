@@ -1,3 +1,4 @@
+{{- if .Values.hdp.hdpingressconfiguration.enabled }}
 {{- $global := . }}
 {{- $replicas:= int .Values.hdp.replicaCount }}
 
@@ -54,4 +55,4 @@ spec:
     - {{ .Values.hdp.loadbalancer.hostName }}
     secretName: {{ .Values.hdp.hdpingressconfiguration.tls.secretName }}
   {{- end }} 
-
+{{- end }}

@@ -70,3 +70,33 @@ tests:
       - matchRegex:
           path: data["hdpdeploy.properties"]
           pattern: "HDP_DATABASE_HOSTNAME=RELEASE-NAME-postgresql"
+
+  # --- hdp.jvmHeap tests ---
+
+  - it: should render default JVM heap values when hdp.jvmHeap is not set
+    set:
+      hdp.database.postgres.enabled: false
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: data["hdpdeploy.properties"]
+          pattern: "HDP_HEAP_INITIAL=4096"
+      - matchRegex:
+          path: data["hdpdeploy.properties"]
+          pattern: "HDP_HEAP_MAX=4096"
+
+  - it: should render custom JVM heap values as plain integers
+    set:
+      hdp.database.postgres.enabled: false
+      hdp.jvmHeap.initial: 6144
+      hdp.jvmHeap.max: 8192
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: data["hdpdeploy.properties"]
+          pattern: "HDP_HEAP_INITIAL=6144"
+      - matchRegex:
+          path: data["hdpdeploy.properties"]
+          pattern: "HDP_HEAP_MAX=8192"
